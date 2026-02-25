@@ -25,6 +25,10 @@ from state import create_initial_pipeline_state  # noqa: E402
 from core.runtime.event_logger import event_logger # noqa: E402
 from core.build.taint_manager import taint_manager # noqa: E402
 from core.build.cache import build_cache # noqa: E402
+from core.runtime.logging import setup_logging # noqa: E402
+
+# Initialize structured logging early
+setup_logging()
 
 # ---------------------------------------------------------------------------
 # SIGINT handler — persists cost to DB before exit so no session data is lost

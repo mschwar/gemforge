@@ -73,8 +73,8 @@ class PipelineState(TypedDict):
     pr_url: str
 
     # Cost Tracking (Module 5)
-    total_tokens: int
-    total_cost: float
+    total_tokens: Annotated[int, operator.add]
+    total_cost: Annotated[float, operator.add]
 
     # Budget & Protection
     max_tokens: int

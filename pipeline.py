@@ -134,6 +134,10 @@ def _calculate_input_hash(state: PipelineState, step_id: str) -> str:
 from langgraph.errors import GraphInterrupt
 from tools.cost_tracker import cost_tracker
 import time
+from core.runtime.logging import logger, setup_logging
+
+# Initialize logging on module load
+setup_logging()
 
 def logged_node(node_func):
     """Decorator to publish step lifecycle events with metrics to the EventBus.
@@ -144,9 +148,13 @@ def logged_node(node_func):
     """
     @functools.wraps(node_func)
     def wrapper(state: PipelineState, *args, **kwargs):
+        from core.llm import node_usage_stats
         run_id = state.get("run_id", "unknown-run")
         step_id = node_func.__name__.replace("_node", "")
         
+        # Initialize node-scoped usage tracking (Phase 3)
+        usage_token = node_usage_stats.set({"tokens": 0, "cost": 0.0})
+
         # 0. Cache Check (Phase 1)
         input_hash = _calculate_input_hash(state, step_id)
         use_cache = os.getenv("GEMFORGE_USE_CACHE", "true").lower() == "true"
@@ -155,12 +163,13 @@ def logged_node(node_func):
         if use_cache and not is_tainted:
             cached_result = build_cache.get(input_hash, step_id)
             if cached_result:
+                logger.info(f"Node {step_id} cache hit (functional).", extra={"run_id": run_id, "step_id": step_id, "cache_hit": True})
                 # Add a marker so we know it was cached
                 cached_result["_from_cache"] = True
                 return cached_result
 
         if is_tainted:
-            print(f"   🚩 [BUILD] Node {step_id} is stale (tainted). Bypassing cache.")
+            logger.warning(f"Node {step_id} is stale (tainted). Bypassing cache.", extra={"run_id": run_id, "step_id": step_id, "tainted": True})
 
         # 1. Routing Logic (Strangler/Worker Proxy)
         is_worker = os.getenv("GEMFORGE_IS_WORKER", "false").lower() == "true"
@@ -174,7 +183,7 @@ def logged_node(node_func):
         )
         
         if should_proxy:
-            print(f"   📡 [PROXY] Routing {step_id} to worker...")
+            logger.info(f"Routing {step_id} to worker...", extra={"run_id": run_id, "step_id": step_id, "proxy": True})
             event_bus.publish(StepEvent(
                 run_id=run_id,
                 step_id=step_id,
@@ -194,9 +203,9 @@ def logged_node(node_func):
                 cost_tracker.total_tokens += metrics.get("tokens_used", 0)
                 cost_tracker.total_cost += metrics.get("cost_usd", 0.0)
                 
-                # Also update the state dict itself
-                patch["total_tokens"] = state.get("total_tokens", 0) + metrics.get("tokens_used", 0)
-                patch["total_cost"] = state.get("total_cost", 0.0) + metrics.get("cost_usd", 0.0)
+                # Functional update (Phase 3)
+                patch["total_tokens"] = metrics.get("tokens_used", 0)
+                patch["total_cost"] = metrics.get("cost_usd", 0.0)
 
             # Store the worker's result in cache
             if use_cache:
@@ -217,8 +226,10 @@ def logged_node(node_func):
         max_cost = state.get("max_cost_usd", 50.0)
         
         if current_tokens > max_tokens:
+            logger.error(f"Token budget exceeded ({current_tokens} > {max_tokens})", extra={"run_id": run_id, "step_id": step_id})
             raise ValueError(f"CRITICAL: Token budget exceeded ({current_tokens} > {max_tokens}). Halting.")
         if current_cost > max_cost:
+            logger.error(f"Cost budget exceeded (${current_cost:.2f} > ${max_cost:.2f})", extra={"run_id": run_id, "step_id": step_id})
             raise ValueError(f"CRITICAL: Cost budget exceeded (${current_cost:.2f} > ${max_cost:.2f}). Halting.")
 
         start_time = time.time()
@@ -231,13 +242,22 @@ def logged_node(node_func):
             step_id=step_id,
             event_type="step.started"
         ))
+        logger.info(f"Node {step_id} started.", extra={"run_id": run_id, "step_id": step_id})
         
         try:
             result = node_func(state, *args, **kwargs)
             
             duration = time.time() - start_time
-            tokens_used = cost_tracker.total_tokens - start_tokens
-            cost_incurred = cost_tracker.total_cost - start_cost
+            
+            # Capture node-scoped usage deltas (Phase 3)
+            usage = node_usage_stats.get()
+            tokens_used = usage["tokens"]
+            cost_incurred = usage["cost"]
+
+            if isinstance(result, dict):
+                # Functional update: LangGraph operator.add will merge these
+                result["total_tokens"] = tokens_used
+                result["total_cost"] = cost_incurred
 
             # Store result in cache
             if use_cache:
@@ -261,6 +281,13 @@ def logged_node(node_func):
                     }
                 }
             ))
+            logger.info(f"Node {step_id} completed.", extra={
+                "run_id": run_id, 
+                "step_id": step_id, 
+                "duration_sec": round(duration, 3),
+                "tokens_used": tokens_used,
+                "cost_usd": round(cost_incurred, 6)
+            })
             return result
         except GraphInterrupt as e:
             # Re-raise without logging as failure (it's a pause, not an error)
@@ -279,7 +306,10 @@ def logged_node(node_func):
                     }
                 }
             ))
+            logger.error(f"Node {step_id} failed: {e}", extra={"run_id": run_id, "step_id": step_id, "duration_sec": round(duration, 3)})
             raise e
+        finally:
+            node_usage_stats.reset(usage_token)
     return wrapper
 
 
