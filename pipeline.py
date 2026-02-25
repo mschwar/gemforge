@@ -10,6 +10,8 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from state import PipelineState
 from tools.file_tools import create_project_structure, write_file
 from tools.deploy_tools import deploy_to_vercel
+from tools.project_tools import generate_xcode_project
+from tools.deploy_tools import is_native_mobile
 import os
 import re
 
@@ -128,6 +130,57 @@ def architecture_node(state: PipelineState):
         print("   → ARCHITECTURE.md saved")
     return {"architecture_complete": True, "progress_log": ["✅ Architecture complete"]}
 
+def platform_decision_node(state: PipelineState):
+    print("🔨 5b. Platform Decision Agent running...")
+    prompt = load_prompt("05b_platform_decision.md")
+    repo_path = state.get("repo_path", "")
+    polished_vision = state.get("polished_vision", "")
+    arch_content = ""
+    try:
+        arch_path = f"{repo_path}/ARCHITECTURE.md"
+        with open(arch_path, "r", encoding="utf-8") as f:
+            arch_content = f.read()
+    except Exception:
+        pass
+    context = f"POLISHED_VISION:\n{polished_vision}\n\nARCHITECTURE:\n{arch_content}"
+    messages = [SystemMessage(content=prompt), HumanMessage(content=context)]
+    response = llm.invoke(messages)
+    if repo_path:
+        write_file(f"{repo_path}/PLATFORM_MANIFEST.md", response.content)
+        print("   → PLATFORM_MANIFEST.md saved")
+    return {"progress_log": ["✅ Platform decision complete"]}
+
+def code_orchestrator_node(state: PipelineState):
+    print("🔨 6. Code Generation Orchestrator — launching real generators...")
+    repo_path = state.get("repo_path", "")
+    from tools.executor_tools import parse_and_save_generated_code, build_and_verify_xcode
+
+    # 1. UI Code Generator
+    prompt = load_prompt("16_ui_code_generator.md")
+    messages = [SystemMessage(content=prompt), HumanMessage(content=state["polished_vision"])]
+    ui_response = llm.invoke(messages)
+    parse_and_save_generated_code(repo_path, ui_response.content)
+
+    # 2. Core Logic Generator
+    prompt = load_prompt("17_core_logic_generator.md")
+    messages = [SystemMessage(content=prompt), HumanMessage(content=state["polished_vision"])]
+    logic_response = llm.invoke(messages)
+    parse_and_save_generated_code(repo_path, logic_response.content)
+
+    # 3. Platform-Specific Generator
+    prompt = load_prompt("18_platform_specific_generator.md")
+    messages = [SystemMessage(content=prompt), HumanMessage(content=state["polished_vision"])]
+    platform_response = llm.invoke(messages)
+    parse_and_save_generated_code(repo_path, platform_response.content)
+
+    # 4. Project structure
+    generate_xcode_project(repo_path, "EarScaffold")
+
+    # 5. Build verification
+    build_and_verify_xcode(repo_path)
+
+    return {"progress_log": ["✅ Full code generation + Xcode project + build verification complete"]}
+
 # ---- PARALLEL AGENTS (return only changed keys — required for parallel execution) ----
 
 def frontend_node(state: PipelineState):
@@ -202,6 +255,8 @@ nodes = [
     ("bootstrapper", bootstrapper_node),
     ("uiux", uiux_node),
     ("architecture", architecture_node),
+    ("platform_decision", platform_decision_node),
+    ("code_orchestrator", code_orchestrator_node),
     ("frontend", frontend_node),
     ("backend", backend_node),
     ("data", data_node),
@@ -226,11 +281,13 @@ workflow.add_conditional_edges(
 workflow.add_edge("ruthless_interrogator", "bootstrapper")
 workflow.add_edge("bootstrapper", "uiux")
 workflow.add_edge("uiux", "architecture")
+workflow.add_edge("architecture", "platform_decision")
+workflow.add_edge("platform_decision", "code_orchestrator")
 
-# Fan-out: architecture → frontend + backend + data (parallel)
-workflow.add_edge("architecture", "frontend")
-workflow.add_edge("architecture", "backend")
-workflow.add_edge("architecture", "data")
+# Fan-out: code_orchestrator → frontend + backend + data (parallel)
+workflow.add_edge("code_orchestrator", "frontend")
+workflow.add_edge("code_orchestrator", "backend")
+workflow.add_edge("code_orchestrator", "data")
 
 # Fan-in: all three → qa
 workflow.add_edge(["frontend", "backend", "data"], "qa")
@@ -245,4 +302,4 @@ conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
 memory = SqliteSaver(conn)
 pipeline_app = workflow.compile(checkpointer=memory)
 
-print("✅ PIPELINE v6 READY — Real Vercel deploy + all nodes return partial state!")
+print("✅ PIPELINE v8 READY — Real Swift code generation + Xcode project + build verification!")
