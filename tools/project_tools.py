@@ -348,21 +348,6 @@ def apply_template(repo_path: str, template_name: str) -> dict:
     }
 
 
-def install_xcodegen():
-    """One-time setup — installs xcodegen via Homebrew if not present."""
-    result = subprocess.run(["which", "xcodegen"], capture_output=True, text=True)
-    if result.returncode == 0:
-        print(f"   xcodegen already installed at {result.stdout.strip()}")
-        return True
-    print("   Installing xcodegen via Homebrew...")
-    r = subprocess.run(["brew", "install", "xcodegen"], capture_output=True, text=True)
-    if r.returncode == 0:
-        print("   ✅ xcodegen installed")
-        return True
-    print(f"   ⚠️ xcodegen install failed: {r.stderr[:200]}")
-    return False
-
-
 def write_project_yml(repo_path: str, app_name: str, bundle_id: str = None) -> str:
     """Write a minimal but correct project.yml for xcodegen."""
     safe_name = "".join(c for c in app_name if c.isalnum())
@@ -395,6 +380,17 @@ def generate_xcode_project(repo_path: str, app_name: str = "App") -> bool:
     Creates a full Xcode project from project.yml via xcodegen.
     Returns True on success.
     """
+    from tools.file_tools import CommandFailure
+
+    # Verify dependency existence instead of attempting host mutation
+    if subprocess.run(["which", "xcodegen"], capture_output=True).returncode != 0:
+        raise CommandFailure({
+            "message": "xcodegen is not installed on the host system.",
+            "error_code": "MISSING_PREREQUISITE",
+            "error_stage": "code_orchestrator",
+            "operator_action": "Run `brew install xcodegen` to install required dependencies."
+        })
+
     project_yml = Path(repo_path) / "project.yml"
     if not project_yml.exists():
         write_project_yml(repo_path, app_name)

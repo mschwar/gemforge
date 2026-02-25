@@ -5,6 +5,7 @@ Persists cumulative totals in checkpoints.db so the Empire Dashboard
 shows real numbers across sessions.
 """
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +19,7 @@ class CostTracker:
         self.total_cost = 0.0
         self.calls = 0
         self._conn: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -41,12 +43,13 @@ class CostTracker:
     def _persist_session(self):
         """Write the current session totals to the DB."""
         try:
-            conn = self._get_conn()
-            conn.execute(
-                "INSERT INTO cost_history (timestamp, tokens, cost_usd, calls) VALUES (?, ?, ?, ?)",
-                (datetime.now().isoformat(), self.total_tokens, self.total_cost, self.calls),
-            )
-            conn.commit()
+            with self._lock:
+                conn = self._get_conn()
+                conn.execute(
+                    "INSERT INTO cost_history (timestamp, tokens, cost_usd, calls) VALUES (?, ?, ?, ?)",
+                    (datetime.now().isoformat(), self.total_tokens, self.total_cost, self.calls),
+                )
+                conn.commit()
         except Exception:
             pass  # Never let persistence errors break the pipeline
 
@@ -73,17 +76,18 @@ class CostTracker:
         else:
             input_t = output_t = cost = 0
 
-        self.total_tokens += input_t + output_t
-        self.total_cost += cost
-        self.calls += 1
+        with self._lock:
+            self.total_tokens += input_t + output_t
+            self.total_cost += cost
+            self.calls += 1
 
-        return {
-            "tokens": input_t + output_t,
-            "cost": round(cost, 6),
-            "total_tokens": self.total_tokens,
-            "total_cost": round(self.total_cost, 4),
-            "calls": self.calls,
-        }
+            return {
+                "tokens": input_t + output_t,
+                "cost": round(cost, 6),
+                "total_tokens": self.total_tokens,
+                "total_cost": round(self.total_cost, 4),
+                "calls": self.calls,
+            }
 
     def finalize_session(self):
         """Call at the end of a pipeline run to persist this session's cost."""

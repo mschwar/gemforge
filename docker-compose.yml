@@ -1,0 +1,28 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - USE_REDIS=true
+      - REDIS_URL=redis://redis:6379
+      - GEMFORGE_WORKER_ENABLED=true
+      - GEMFORGE_WORKER_ENABLED_STEPS=qa,qa_generator
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - .:/app
+    # In a real system, we'd mount the projects root
+    # - ../gemforge-projects:/gemforge-projects

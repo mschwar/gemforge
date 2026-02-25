@@ -8,20 +8,37 @@ from pipeline.py to avoid the circular dependency.
 """
 import os
 import time
+from contextvars import ContextVar
+from typing import Dict
 
 from langchain_anthropic import ChatAnthropic
 
 from core.evolution.prompt_loader import prompt_loader
 from tools.cost_tracker import cost_tracker
+from core.runtime.logging import logger
+
+# Context variables for thread-safe, node-scoped cost tracking (Phase 3)
+node_usage_stats: ContextVar[Dict[str, float]] = ContextVar(
+    "node_usage_stats", default={"tokens": 0, "cost": 0.0}
+)
+# Context variable for Semantic Immune System node identification (Horizon 2)
+current_node_id: ContextVar[str] = ContextVar(
+    "current_node_id", default=None
+)
 
 _llm: ChatAnthropic | None = None
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
 
 
-def get_llm() -> ChatAnthropic:
+def get_llm(model_name: str | None = None) -> ChatAnthropic:
+    """Returns an LLM client. If model_name is provided, a fresh client is created for that model."""
+    if model_name:
+        return ChatAnthropic(model=model_name, temperature=0)
+    
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(model="claude-3-haiku-20240307", temperature=0)
+        default_model = os.getenv("GEMFORGE_DEFAULT_LLM_MODEL", "claude-3-haiku-20240307")
+        _llm = ChatAnthropic(model=default_model, temperature=0)
     return _llm
 
 
@@ -44,15 +61,70 @@ def _is_retryable_llm_error(exc: Exception) -> bool:
     return any(marker in message for marker in retry_markers) or "timeout" in error_name
 
 
-def cost_aware_invoke(prompt_messages):
-    """Invoke the LLM and track token usage and cost."""
+def _inject_immune_system_context(messages):
+    """(Horizon 2) Injects globally resolved bugs from semantic memory into the SystemMessage."""
+    node_id = current_node_id.get()
+    if not node_id:
+        return messages
+
+    try:
+        from core.memory.retriever import semantic_retriever
+        
+        # We query memory specifically for past 'repair' lessons related to this node's responsibility
+        query = f"resolved bug fix patch {node_id}"
+        hits = semantic_retriever.search(query, k=2, filters={"doc_type": "repair"})
+        
+        if hits:
+            injection = "\n\n### GLOBAL SEMANTIC IMMUNE SYSTEM (PAST LESSONS) ###\n"
+            injection += "The following are historical bug fixes related to this step. Avoid making these same mistakes:\n"
+            for h in hits:
+                injection += f"\n- {h['text']}\n"
+            
+            # Inject into the first SystemMessage if it exists
+            new_messages = list(messages)
+            if new_messages and hasattr(new_messages[0], 'content'):
+                # Handle both SystemMessage objects and dictionaries
+                if type(new_messages[0]).__name__ == "SystemMessage":
+                    from langchain_core.messages import SystemMessage
+                    new_messages[0] = SystemMessage(content=new_messages[0].content + injection)
+                elif isinstance(new_messages[0], dict) and new_messages[0].get("role") == "system":
+                    new_messages[0]["content"] += injection
+            
+            logger.debug(f"Injected Semantic Immune System lessons for node: {node_id}")
+            return new_messages
+    except Exception as e:
+        logger.debug(f"Semantic Immune System injection failed for {node_id}: {e}")
+        
+    return messages
+
+
+def cost_aware_invoke(prompt_messages, model_name: str | None = None):
+    """Invoke the LLM and track token usage and cost.
+    
+    Args:
+        prompt_messages: List of HumanMessage/SystemMessage
+        model_name: Optional override for the LLM model (e.g. "claude-3-5-sonnet-20240620")
+    """
     max_attempts = max(1, int(os.getenv("GEMFORGE_LLM_MAX_ATTEMPTS", "3")))
     base_delay = max(0.1, float(os.getenv("GEMFORGE_LLM_RETRY_BASE_SECONDS", "1.5")))
 
+    # Horizon 2: Inject Global Semantic Memory
+    prompt_messages = _inject_immune_system_context(prompt_messages)
+
     for attempt in range(1, max_attempts + 1):
         try:
-            response = get_llm().invoke(prompt_messages)
-            cost_tracker.track_call(response)
+            response = get_llm(model_name=model_name).invoke(prompt_messages)
+            
+            # 1. Update the legacy singleton (with its internal lock)
+            stats = cost_tracker.track_call(response)
+            
+            # 2. Update the functional context variable (Phase 3)
+            current = node_usage_stats.get()
+            node_usage_stats.set({
+                "tokens": current["tokens"] + stats["tokens"],
+                "cost": current["cost"] + stats["cost"]
+            })
+            
             return response
         except Exception as exc:
             if attempt >= max_attempts or not _is_retryable_llm_error(exc):
