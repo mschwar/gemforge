@@ -3,9 +3,10 @@ GemForge — Git Tools (Module 3)
 Auto GitHub repo creation, push, and initial PR using gh CLI (zero API keys).
 """
 
+import re
 import subprocess
 from pathlib import Path
-import re
+
 
 def sanitize_repo_name(name: str) -> str:
     name = re.sub(r'[^a-zA-Z0-9-]', '-', name.lower())

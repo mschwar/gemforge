@@ -129,6 +129,12 @@ def bootstrapper_node(state: PipelineState):
     gem_name = state.get("raw_idea", "NewGem")[:50]
     repo_path = create_project_structure(gem_name)
 
+    # Write the Staff Audit if it exists
+    audited = state.get("audited_context")
+    if audited and repo_path:
+        write_file(f"{repo_path}/STAFF_AUDIT.md", audited)
+        print("   → STAFF_AUDIT.md saved to repo")
+
     # Write canonical docs now that the folder exists
     raw_output = state.get("canonical_docs", {}).get("_raw_output", "")
     if raw_output:
@@ -151,8 +157,10 @@ def uiux_node(state: PipelineState):
     print("🔨 4. UI/UX Design Agent running...")
     prompt = load_prompt("04_uiux_design.md")
     repo_path = state.get("repo_path", "")
-    context = state.get("polished_vision", "") + "\n\n" + "\n".join(
-        f"{k}: {v}" for k, v in state.get("canonical_docs", {}).items() if not k.startswith("_")
+    context = (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
+        + "\n".join(f"{k}: {v}" for k, v in state.get("canonical_docs", {}).items() if not k.startswith("_"))
     )
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
     response = cost_aware_invoke(messages)
@@ -165,8 +173,10 @@ def architecture_node(state: PipelineState):
     print("🔨 5. Architecture Agent running...")
     prompt = load_prompt("05_architecture.md")
     repo_path = state.get("repo_path", "")
-    context = state.get("polished_vision", "") + "\n\n" + "\n".join(
-        f"{k}: {v}" for k, v in state.get("canonical_docs", {}).items() if not k.startswith("_")
+    context = (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
+        + "\n".join(f"{k}: {v}" for k, v in state.get("canonical_docs", {}).items() if not k.startswith("_"))
     )
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
     response = cost_aware_invoke(messages)
@@ -297,6 +307,7 @@ def code_orchestrator_node(state: PipelineState):
 
     generator_context = (
         f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
         f"UIUX_SPEC:\n{_safe_read(f'{repo_path}/UIUX_SPEC.md')}\n\n"
         f"ARCHITECTURE:\n{_safe_read(f'{repo_path}/ARCHITECTURE.md')}\n\n"
         f"PLATFORM_MANIFEST:\n{manifest_content}"

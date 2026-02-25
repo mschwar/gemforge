@@ -4,7 +4,9 @@ Enforces consistency between state, files on disk, and git before any commit.
 """
 
 from pathlib import Path
+
 from .enforcer import DisciplineEnforcer
+
 
 def run_cross_check(generated_project_path: Path = None):
     """Full Step 5 execution"""

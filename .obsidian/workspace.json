@@ -1,0 +1,217 @@
+{
+  "main": {
+    "id": "216d151435124d1e",
+    "type": "split",
+    "children": [
+      {
+        "id": "3b5851d7c349a532",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "aa61905c35000096",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Audit.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Audit"
+            }
+          },
+          {
+            "id": "6d296a447dce0d92",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Feat-Product_Re-Manufacturer.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Feat-Product_Re-Manufacturer"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "33d32c8e1551ce0d",
+    "type": "split",
+    "children": [
+      {
+        "id": "a6b1f6c4f28f3fff",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "9f649dd1ea5e9fec",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "872227a56860d65c",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "9e586190e9201c04",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "7264ef25c4feae0c",
+    "type": "split",
+    "children": [
+      {
+        "id": "95e9d66d6411d02c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f42428793dea94c7",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Feat-Product_Re-Manufacturer.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Feat-Product_Re-Manufacturer"
+            }
+          },
+          {
+            "id": "b7ed0a07c3d75d7a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Feat-Product_Re-Manufacturer.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Feat-Product_Re-Manufacturer"
+            }
+          },
+          {
+            "id": "6b537291496532b6",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "5c1305cc3adfdadc",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "f415864f27422e86",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Feat-Product_Re-Manufacturer.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Feat-Product_Re-Manufacturer"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "6d296a447dce0d92",
+  "lastOpenFiles": [
+    "core/__pycache__/llm.cpython-312.pyc",
+    "core/__pycache__",
+    "tests/__pycache__/test_template_application.cpython-312-pytest-9.0.2.pyc",
+    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/REQUESTED",
+    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/INSTALLER",
+    "venv/lib/python3.12/site-packages/ruff/__pycache__/__main__.cpython-312.pyc",
+    "venv/lib/python3.12/site-packages/ruff/__pycache__/__init__.cpython-312.pyc",
+    "venv/lib/python3.12/site-packages/ruff/__pycache__",
+    "venv/bin/ruff",
+    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/licenses/LICENSE",
+    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/licenses",
+    "Audit.md",
+    "Feat-Product_Re-Manufacturer.md"
+  ]
+}
