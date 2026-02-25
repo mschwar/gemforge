@@ -29,7 +29,7 @@ async def get_run_events(run_id: str):
 @app.get("/runs/{run_id}/repairs")
 async def get_run_repairs(run_id: str):
     """Get repair history for a run."""
-    with sqlite3.connect(str(_DB_PATH)) as conn:
+    with sqlite3.connect(str(_DB_PATH), timeout=30) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.execute("SELECT * FROM repair_attempts WHERE run_id = ? ORDER BY created_at ASC", (run_id,))
         return {"repairs": [dict(row) for row in cur.fetchall()]}

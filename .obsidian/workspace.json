@@ -8,20 +8,6 @@
         "type": "tabs",
         "children": [
           {
-            "id": "aa61905c35000096",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Audit.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Audit"
-            }
-          },
-          {
             "id": "6d296a447dce0d92",
             "type": "leaf",
             "state": {
@@ -33,6 +19,20 @@
               },
               "icon": "lucide-file",
               "title": "Feat-Product_Re-Manufacturer"
+            }
+          },
+          {
+            "id": "ccb7c5e29abe52d6",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "GemForge Pipeline Audit — 2026-02-25"
             }
           }
         ],
@@ -109,7 +109,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Feat-Product_Re-Manufacturer.md",
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -119,7 +119,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Feat-Product_Re-Manufacturer"
+              "title": "Backlinks for GemForge Pipeline Audit — 2026-02-25"
             }
           },
           {
@@ -128,12 +128,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Feat-Product_Re-Manufacturer.md",
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Feat-Product_Re-Manufacturer"
+              "title": "Outgoing links from GemForge Pipeline Audit — 2026-02-25"
             }
           },
           {
@@ -171,13 +171,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Feat-Product_Re-Manufacturer.md",
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Feat-Product_Re-Manufacturer"
+              "title": "Outline of GemForge Pipeline Audit — 2026-02-25"
             }
           }
         ]
@@ -198,20 +198,26 @@
       "bases:Create new base": false
     }
   },
-  "active": "6d296a447dce0d92",
+  "active": "ccb7c5e29abe52d6",
   "lastOpenFiles": [
-    "core/__pycache__/llm.cpython-312.pyc",
-    "core/__pycache__",
-    "tests/__pycache__/test_template_application.cpython-312-pytest-9.0.2.pyc",
-    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/REQUESTED",
-    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/INSTALLER",
-    "venv/lib/python3.12/site-packages/ruff/__pycache__/__main__.cpython-312.pyc",
-    "venv/lib/python3.12/site-packages/ruff/__pycache__/__init__.cpython-312.pyc",
-    "venv/lib/python3.12/site-packages/ruff/__pycache__",
-    "venv/bin/ruff",
-    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/licenses/LICENSE",
-    "venv/lib/python3.12/site-packages/ruff-0.15.2.dist-info/licenses",
-    "Audit.md",
-    "Feat-Product_Re-Manufacturer.md"
+    "core/runtime/__pycache__/sandbox.cpython-312.pyc",
+    "core/runtime/sandbox.py",
+    "tests/__pycache__/test_dependency_integrity.cpython-312-pytest-9.0.2.pyc",
+    "tests/test_dependency_integrity.py",
+    "test_checkpoints.db-shm",
+    "test_checkpoints.db-wal",
+    "test_checkpoints.db",
+    "memory/build_cache.db-shm",
+    "memory/build_cache.db-wal",
+    "tests/__pycache__/test_blueprint_03_build.cpython-312-pytest-9.0.2.pyc",
+    "core/runtime/__pycache__/reducer.cpython-312.pyc",
+    "docs/architecture/PIPELINE_STAGE_MAP.md",
+    "docs/roadmaps/2026-02-25-audit-remediation-roadmap.md",
+    "docs/blueprints/BLUEPRINT_03_DETERMINISTIC_BUILD_GRAPH_INCREMENTAL_CACHE.md",
+    "docs/blueprints/BLUEPRINT_02_SEMANTIC_MEMORY_AGENTIC_REPAIR_LOOP.md",
+    "docs/blueprints/BLUEPRINT_01_EVENT_DRIVEN_FORGE_RUNTIME.md",
+    "Feat-Product_Re-Manufacturer.md",
+    "GemForge Pipeline Audit — 2026-02-25.md",
+    "Audit.md"
   ]
 }

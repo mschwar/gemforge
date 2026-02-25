@@ -127,13 +127,16 @@ def discipline_step(step_number: int, short_name: str, description: str, generat
                 description
             )
         
-        # Always commit the factory itself
-        enforcer.disciplined_commit(
-            enforcer.FACTORY_ROOT,
-            step_number,
-            short_name,
-            description
-        )
+        # Factory-root commits are opt-in to avoid staging unrelated in-flight work.
+        if os.getenv("GEMFORGE_COMMIT_FACTORY_ROOT", "false").lower() == "true":
+            enforcer.disciplined_commit(
+                enforcer.FACTORY_ROOT,
+                step_number,
+                short_name,
+                description
+            )
+        else:
+            print("ℹ️ [D-Protocol] Factory-root commit skipped (set GEMFORGE_COMMIT_FACTORY_ROOT=true to enable).")
 
 # Decorator for easy agent wrapping
 def enforce_protocol(step_number: int, short_name: str, description: str):
