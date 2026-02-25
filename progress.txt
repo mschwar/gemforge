@@ -15,3 +15,5 @@ Phase 5 — Discipline Protocol (making foundations bulletproof)
 2026-02-24 20:18 MST — step 5: Discipline Foundations - Final audit.log + docs sync after first full protocol execution.
 
 2026-02-24 20:28 MST — step 5: Discipline Integration - Wrapped all core entrypoints (state.py, main.py, gemforge_cli.py, pipeline.py) with @enforce_protocol + discipline_step + disciplined state factory. Graph compilation now self-enforcing.
+
+2026-02-24 20:35 MST — step 5: Discipline Integration Cleanup - Add *.bak.* to .gitignore, remove committed backups from git tracking, sync audit.log.

@@ -8,3 +8,6 @@ checkpoints.db
 checkpoints.db-shm
 checkpoints.db-wal
 projects/
+
+# Safety backups (never commit)
+*.bak.*

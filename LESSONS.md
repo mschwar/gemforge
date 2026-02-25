@@ -35,3 +35,7 @@
 - Used safe /tmp fixer script to bypass shell escaping (learned lesson: never put != in inline python -c)
 - Every future run of GemForge will now print the D-Protocol banner and log to audit trail automatically.
 - Zero breaking changes — backward compatible, venv-safe.
+
+### 2026-02-24 Backup File Hygiene
+- Always add *.bak.* to .gitignore BEFORE running git add -A in any cycle that creates backups.
+- Backup files committed this cycle; removed via git rm --cached + .gitignore entry.
