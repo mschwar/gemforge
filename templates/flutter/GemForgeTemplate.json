@@ -1,0 +1,12 @@
+{
+  "template_name": "flutter",
+  "platform": "flutter",
+  "aliases": ["dart", "flutter-mobile", "flutter-app"],
+  "supports_llm_generators": false,
+  "description": "Flutter starter with Material UI and a tap counter core feature.",
+  "required_files": [
+    "pubspec.yaml",
+    "analysis_options.yaml",
+    "lib/main.dart"
+  ]
+}

@@ -4,7 +4,18 @@ from pathlib import Path
 from datetime import datetime
 
 # Project types that cannot be hosted on Vercel
-NATIVE_KEYWORDS = ["ios", "swift", "swiftui", "iphone", "ipad", "android", "kotlin", "flutter"]
+NATIVE_KEYWORDS = [
+    "ios",
+    "swift",
+    "swiftui",
+    "iphone",
+    "ipad",
+    "android",
+    "kotlin",
+    "flutter",
+    "react-native",
+    "react native",
+]
 
 
 def is_native_mobile(idea: str) -> bool:

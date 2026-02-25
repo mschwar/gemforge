@@ -1,26 +1,54 @@
-from tools.file_tools import write_file, ensure_dir
 from pathlib import Path
 import re
 
+from tools.file_tools import ensure_dir, write_file
+
+
+def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
+    cleaned = filename.strip().lstrip("/").replace("\\", "/")
+    if not cleaned:
+        return None
+
+    output_path = Path(repo_path)
+    if "/" in cleaned:
+        return output_path / cleaned
+
+    if cleaned.endswith(".swift"):
+        return output_path / "Sources" / cleaned
+
+    return output_path / cleaned
+
+
 def parse_and_save_generated_code(repo_path: str, llm_response: str):
-    """Parses ===Filename.swift=== blocks and saves them"""
-    pattern = r"===(.+?\.swift)===\n(.*?)(?===|\Z)"
+    """
+    Parse ===relative/path.ext=== code blocks and write files.
+
+    Backward-compatible behavior:
+    - bare .swift filenames are written under Sources/
+    - other bare filenames are written to repo root
+    """
+    pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, llm_response, re.DOTALL)
 
+    written_count = 0
     for filename, content in matches:
-        clean_filename = filename.strip()
-        full_path = f"{repo_path}/Sources/{clean_filename}"
-        ensure_dir(str(Path(full_path).parent))
-        write_file(full_path, content.strip())
-        print(f"   ✅ Generated {clean_filename}")
+        destination = _resolve_generated_file_path(repo_path, filename)
+        if not destination:
+            continue
 
-    return len(matches)
+        ensure_dir(str(destination.parent))
+        write_file(str(destination), content.strip())
+        print(f"   ✅ Generated {destination.relative_to(repo_path)}")
+        written_count += 1
+
+    return written_count
+
 
 def build_and_verify_xcode(repo_path: str):
     """Runs xcodegen + build verification"""
     try:
-        import subprocess
         import glob as glob_module
+        import subprocess
 
         # Find the .xcodeproj
         xcodeproj_matches = glob_module.glob(f"{repo_path}/*.xcodeproj")

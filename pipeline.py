@@ -10,8 +10,11 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from state import PipelineState
 from tools.file_tools import create_project_structure, write_file
 from tools.deploy_tools import deploy_to_vercel
-from tools.project_tools import generate_xcode_project
-from tools.deploy_tools import is_native_mobile
+from tools.project_tools import (
+    apply_template,
+    generate_xcode_project,
+    parse_platform_manifest,
+)
 import os
 import re
 
@@ -145,41 +148,105 @@ def platform_decision_node(state: PipelineState):
     context = f"POLISHED_VISION:\n{polished_vision}\n\nARCHITECTURE:\n{arch_content}"
     messages = [SystemMessage(content=prompt), HumanMessage(content=context)]
     response = llm.invoke(messages)
+    manifest_data = parse_platform_manifest(response.content)
     if repo_path:
         write_file(f"{repo_path}/PLATFORM_MANIFEST.md", response.content)
         print("   → PLATFORM_MANIFEST.md saved")
-    return {"progress_log": ["✅ Platform decision complete"]}
+    return {
+        "selected_platform": manifest_data.get("selected_platform", ""),
+        "selected_template": manifest_data.get("template", ""),
+        "platform_manifest": manifest_data,
+        "progress_log": [
+            "✅ Platform decision complete",
+            (
+                f"   ↳ platform={manifest_data.get('selected_platform', 'unknown')}, "
+                f"template={manifest_data.get('template', 'unknown')}"
+            ),
+        ],
+    }
 
 def code_orchestrator_node(state: PipelineState):
     print("🔨 6. Code Generation Orchestrator — launching real generators...")
     repo_path = state.get("repo_path", "")
     from tools.executor_tools import parse_and_save_generated_code, build_and_verify_xcode
 
-    # 1. UI Code Generator
-    prompt = load_prompt("16_ui_code_generator.md")
-    messages = [SystemMessage(content=prompt), HumanMessage(content=state["polished_vision"])]
-    ui_response = llm.invoke(messages)
-    parse_and_save_generated_code(repo_path, ui_response.content)
+    manifest_path = f"{repo_path}/PLATFORM_MANIFEST.md"
+    manifest_content = ""
+    if os.path.exists(manifest_path):
+        with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+            manifest_content = manifest_file.read()
+    manifest_data = parse_platform_manifest(manifest_content)
 
-    # 2. Core Logic Generator
-    prompt = load_prompt("17_core_logic_generator.md")
-    messages = [SystemMessage(content=prompt), HumanMessage(content=state["polished_vision"])]
-    logic_response = llm.invoke(messages)
-    parse_and_save_generated_code(repo_path, logic_response.content)
+    template_hint = (
+        manifest_data.get("template")
+        or manifest_data.get("selected_platform")
+        or state.get("selected_template")
+        or "ios-swiftui"
+    )
+    template_result = apply_template(repo_path, template_hint)
+    template_metadata = template_result.get("metadata", {})
+    selected_platform = template_result.get("platform", template_hint)
+    supports_llm_generators = bool(template_metadata.get("supports_llm_generators", False))
 
-    # 3. Platform-Specific Generator
-    prompt = load_prompt("18_platform_specific_generator.md")
-    messages = [SystemMessage(content=prompt), HumanMessage(content=state["polished_vision"])]
-    platform_response = llm.invoke(messages)
-    parse_and_save_generated_code(repo_path, platform_response.content)
+    progress = [f"✅ Template applied: {template_result.get('name')} ({selected_platform})"]
 
-    # 4. Project structure
-    generate_xcode_project(repo_path, "EarScaffold")
+    def _safe_read(path: str) -> str:
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                return file.read()
+        except Exception:
+            return ""
 
-    # 5. Build verification
-    build_and_verify_xcode(repo_path)
+    generator_context = (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"UIUX_SPEC:\n{_safe_read(f'{repo_path}/UIUX_SPEC.md')}\n\n"
+        f"ARCHITECTURE:\n{_safe_read(f'{repo_path}/ARCHITECTURE.md')}\n\n"
+        f"PLATFORM_MANIFEST:\n{manifest_content}"
+    )
 
-    return {"progress_log": ["✅ Full code generation + Xcode project + build verification complete"]}
+    if supports_llm_generators:
+        # 1. UI Code Generator
+        prompt = load_prompt("16_ui_code_generator.md")
+        messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
+        ui_response = llm.invoke(messages)
+        parse_and_save_generated_code(repo_path, ui_response.content)
+
+        # 2. Core Logic Generator
+        prompt = load_prompt("17_core_logic_generator.md")
+        messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
+        logic_response = llm.invoke(messages)
+        parse_and_save_generated_code(repo_path, logic_response.content)
+
+        # 3. Platform-Specific Generator
+        prompt = load_prompt("18_platform_specific_generator.md")
+        messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
+        platform_response = llm.invoke(messages)
+        parse_and_save_generated_code(repo_path, platform_response.content)
+        progress.append("✅ LLM code generators completed")
+    else:
+        progress.append("✅ Template-only code path selected (no LLM generators)")
+
+    # 4. Project structure / build verification
+    if selected_platform == "ios-swiftui":
+        app_name = template_result.get("context", {}).get("APP_NAME_SAFE", "GemForgeApp")
+        generate_xcode_project(repo_path, app_name)
+        build_and_verify_xcode(repo_path)
+        progress.append("✅ iOS project structure + build verification complete")
+    else:
+        validation = template_result.get("validation", {})
+        if validation.get("valid", False):
+            progress.append("✅ Template validation complete")
+        else:
+            progress.append(
+                f"⚠️ Template validation missing files: {validation.get('missing_files', [])}"
+            )
+
+    return {
+        "selected_platform": selected_platform,
+        "selected_template": template_result.get("name"),
+        "platform_manifest": manifest_data,
+        "progress_log": progress,
+    }
 
 # ---- PARALLEL AGENTS (return only changed keys — required for parallel execution) ----
 
@@ -217,8 +284,14 @@ def deploy_node(state: PipelineState):
     print("🔨 13. Final Deploy Agent...")
     repo_path = state.get("repo_path", "new-gem")
     idea = state.get("raw_idea", "")
+    selected_platform = str(state.get("selected_platform", "")).strip().lower()
 
-    live_url = deploy_to_vercel(repo_path, idea)
+    native_platforms = {"ios-swiftui", "flutter", "react-native", "android-kotlin"}
+    if selected_platform in native_platforms:
+        # Force native skip even when the raw idea text does not include native keywords.
+        live_url = deploy_to_vercel(repo_path, selected_platform)
+    else:
+        live_url = deploy_to_vercel(repo_path, idea)
 
     if live_url:
         print(f"\n🎉 APP IS NOW LIVE → {live_url}")

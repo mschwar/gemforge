@@ -1,0 +1,13 @@
+{
+  "template_name": "ios-swiftui",
+  "platform": "ios-swiftui",
+  "aliases": ["ios", "swiftui", "iphone", "ipad", "apple"],
+  "supports_llm_generators": true,
+  "description": "Native iOS SwiftUI app scaffold with a tap-counter core feature.",
+  "required_files": [
+    "project.yml",
+    "Sources/AppMain.swift",
+    "Sources/ContentView.swift",
+    "Sources/AppViewModel.swift"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "template_name": "nextjs",
+  "platform": "nextjs",
+  "aliases": ["next", "nextjs-web", "web", "react-web"],
+  "supports_llm_generators": false,
+  "description": "Next.js App Router scaffold with a client-side counter core feature.",
+  "required_files": [
+    "package.json",
+    "next.config.mjs",
+    "tsconfig.json",
+    "app/layout.tsx",
+    "app/page.tsx",
+    "app/components/CoreFeatureCounter.tsx"
+  ]
+}

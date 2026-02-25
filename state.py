@@ -19,6 +19,11 @@ class PipelineState(TypedDict):
     repo_path: str
     repo_created: bool
 
+    # After Platform Decision
+    selected_platform: str
+    selected_template: str
+    platform_manifest: Dict[str, Any]
+
     # Current progress
     current_phase: str
     progress_log: Annotated[List[str], operator.add]  # merge-safe for parallel nodes
