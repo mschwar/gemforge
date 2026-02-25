@@ -1,7 +1,10 @@
 #!/usr/bin/env python
+import hashlib
 import signal
 import sys
+import time
 from pathlib import Path
+from uuid import uuid4
 
 # Ensure repo root is on sys.path so pipeline.py, tools/, core/, and state.py
 # can be imported regardless of the user's current working directory.
@@ -59,6 +62,19 @@ def _load_thread_id(explicit: str | None) -> str:
     print("❌  No active session found and no thread-id provided.")
     print("    Run 'gemforge new \"your idea\"' first, then come back here.")
     sys.exit(1)
+
+
+def _build_thread_id(raw_idea: str) -> str:
+    """Create collision-resistant thread IDs while keeping a readable slug prefix."""
+    slug = "".join(
+        c for c in raw_idea[:60].replace(" ", "-").replace("/", "")
+        if c.isalnum() or c in "-_"
+    ).strip("-_") or "idea"
+
+    # Include both random and time entropy to avoid collisions across rapid retries.
+    entropy = f"{uuid4().hex[:8]}-{time.time_ns()}"
+    suffix = hashlib.sha1(entropy.encode("utf-8")).hexdigest()[:8]
+    return f"gem-{slug}-{suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +146,7 @@ def cmd_new(args):
     validate_environment()
     signal.signal(signal.SIGINT, _sigint_handler)
 
-    thread_id = f"gem-{raw_idea[:60].replace(' ', '-').replace('/', '')}"
+    thread_id = _build_thread_id(raw_idea)
 
     _thread_id_path = _find_thread_id_path()
     with open(_thread_id_path, "w") as f:
@@ -194,6 +210,7 @@ def cmd_resume(args):
         print("\n⏸️  Review the refined vision, then:")
         print("   gemforge resume approve")
         print("   gemforge resume refine \"More feedback\"")
+        _finalize_and_report(result)
 
 
 def cmd_list(args):

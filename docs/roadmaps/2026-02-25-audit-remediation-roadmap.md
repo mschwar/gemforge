@@ -75,6 +75,15 @@ Scope: Remove run-collision risk and make cost/state accounting consistent acros
 - Keep old thread-ID lookup as fallback candidate for one release cycle.
 - If cost persistence introduces duplicate writes, gate with idempotency token in session finalizer.
 
+### Status
+- Executed on 2026-02-25:
+  - Collision-safe project directory allocation implemented.
+  - Collision-resistant `thread_id` generation implemented.
+  - `resume refine` now finalizes/persists session reporting like `resume approve`.
+- Gate evidence:
+  - `python -m pytest -q tests/test_phase2_identity_state.py` → `3 passed`
+  - `python -m pytest -q` → `13 passed`
+
 ## Phase 3: Generation and Context Robustness
 Scope: Bound LLM context costs and enforce minimum generation integrity guarantees.
 

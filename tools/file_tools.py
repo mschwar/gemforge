@@ -31,10 +31,22 @@ def init_git_repo(repo_path: str):
     run_command(["git", "branch", "-M", "main"], cwd=repo_path)
     return repo_path
 
+
+def _timestamp_for_project() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
 def create_project_structure(gem_name: str):
-    timestamp = datetime.now().strftime("%Y%m%d")
-    clean_name = "".join(c if c.isalnum() else "-" for c in gem_name.lower())
-    full_path = str(PROJECTS_ROOT / f"{clean_name}-{timestamp}")
+    timestamp = _timestamp_for_project()
+    clean_name = "".join(c if c.isalnum() else "-" for c in gem_name.lower()).strip("-") or "new-gem"
+
+    candidate = PROJECTS_ROOT / f"{clean_name}-{timestamp}"
+    suffix = 1
+    while candidate.exists():
+        candidate = PROJECTS_ROOT / f"{clean_name}-{timestamp}-{suffix}"
+        suffix += 1
+
+    full_path = str(candidate)
 
     ensure_dir(full_path)
     # full_path is always absolute at this point
