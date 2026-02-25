@@ -20,9 +20,13 @@ def resume_graph(run_id: str, state_patch: dict, metrics: dict = None):
         resume_data = {"state_patch": state_patch}
         if metrics:
             resume_data["metrics"] = metrics
+        
+        # Atomically resume. If this crashes, the event remains unpublished in the outbox.
         get_pipeline_app().invoke(Command(resume=resume_data), config)
+        return True
     except Exception as e:
         print(f"   [DISPATCH] ❌ Failed to resume {run_id}: {e}")
+        return False
 
 def main():
     """Background process to poll event_outbox and dispatch events."""
@@ -42,7 +46,6 @@ def main():
             processed_ids = []
             for row in rows:
                 event_data = json.loads(row["event_json"])
-                event_id = event_data.get("event_id", "unknown")
                 run_id = event_data.get("run_id", "unknown")
                 step_id = event_data.get("step_id", "unknown")
                 event_type = event_data.get("event_type", "unknown")
@@ -52,7 +55,10 @@ def main():
                 
                 # Phase 2: Resume graph on worker completion
                 if event_type == "step.completed" and "state_patch" in payload:
-                    resume_graph(run_id, payload["state_patch"], payload.get("metrics"))
+                    success = resume_graph(run_id, payload["state_patch"], payload.get("metrics"))
+                    if not success:
+                        # Don't mark as published if resume failed; retry on next loop
+                        continue
                 
                 processed_ids.append(row["id"])
 

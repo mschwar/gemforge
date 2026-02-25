@@ -30,6 +30,7 @@ from tools.deploy_tools import deploy_to_vercel
 from tools.executor_tools import run_tests
 from tools.file_tools import create_project_structure, write_file
 from tools.git_tools import push_to_github
+from core.runtime.sandbox import ProjectSandbox
 from tools.project_tools import (
     apply_template,
     generate_xcode_project,
@@ -37,13 +38,10 @@ from tools.project_tools import (
 )
 
 
-def parse_and_save_docs(response_text: str, repo_path: str) -> tuple[dict, list[Path]]:
-    """Parse ===FILENAME=== blocks and write each to disk.
-    Returns (dict_of_excerpts, list_of_written_paths).
-    """
+def parse_and_save_docs(response_text: str, sandbox: ProjectSandbox) -> tuple[dict, list[Path]]:
+    """Parse ===FILENAME=== blocks and write each to disk securely."""
     saved = {}
     saved_paths = []
-    repo_root = Path(repo_path).resolve()
     pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, response_text, re.DOTALL)
     for filename, content in matches:
@@ -53,18 +51,15 @@ def parse_and_save_docs(response_text: str, repo_path: str) -> tuple[dict, list[
                 and "/" not in filename:
             continue
 
-        # Guard: block model-suggested paths that escape the project directory.
-        destination = (repo_root / filename).resolve()
         try:
-            destination.relative_to(repo_root)
-        except ValueError:
-            print(f"   ⚠️ SECURITY: Rejected path traversal attempt in docs output: {filename!r}")
+            destination = sandbox.safe_write(filename, content.strip())
+            saved[filename] = content.strip()[:200]
+            saved_paths.append(destination)
+            print(f"   → Saved {filename}")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
             continue
 
-        write_file(str(destination), content.strip())
-        saved[filename] = content.strip()[:200]
-        saved_paths.append(destination)
-        print(f"   → Saved {filename}")
     return saved, saved_paths
 
 from tools.ingestor_tools import bundle_context
@@ -78,6 +73,26 @@ from core.build.cache import build_cache
 from core.build.taint_manager import taint_manager
 import functools
 
+NODE_PROMPT_MAP = {
+    "vision_polisher": "01_vision_polisher.md",
+    "ruthless_interrogator": "02_ruthless_interrogator.md",
+    "uiux": "04_uiux_design.md",
+    "architecture": "05_architecture.md",
+    "platform_decision": "05b_platform_decision.md",
+    "frontend": "06_frontend.md",
+    "backend": "07_backend.md",
+    "data": "08_data.md",
+    "infra": "10_infra.md",
+    "cicd": "11_cicd.md",
+    "sre": "12_sre.md",
+    "director": "13_director.md",
+    "qa_generator": "19_qa_generator.md",
+    "weaver": "21_weaver_reflector.md",
+    "repair": "22_iteration_surgeon.md",
+    "business_strategist": "23_business_strategist.md",
+    "landing_page": "24_landing_page_generator.md",
+}
+
 def _calculate_input_hash(state: PipelineState, step_id: str) -> str:
     """Calculates a deterministic hash of the inputs relevant to a step."""
     # Base inputs for almost all nodes
@@ -87,6 +102,16 @@ def _calculate_input_hash(state: PipelineState, step_id: str) -> str:
         "step_id": step_id
     }
     
+    # Add step-specific prompt hash (Fix 1)
+    prompt_file = NODE_PROMPT_MAP.get(step_id)
+    if prompt_file:
+        try:
+            prompt_path = Path("agents") / prompt_file
+            if prompt_path.exists():
+                inputs["prompt_hash"] = calculate_file_hash(prompt_path)
+        except Exception:
+            pass
+
     # Add step-specific dependencies
     if step_id in ["vision_polisher", "ruthless_interrogator"]:
         inputs["audited_context"] = state.get("audited_context", "")
@@ -184,6 +209,18 @@ def logged_node(node_func):
             return patch
 
         # 2. Execution Logic (Standard Sync or inside Worker)
+        
+        # 2a. Budget Check (Risk 5)
+        current_tokens = state.get("total_tokens", 0)
+        current_cost = state.get("total_cost", 0.0)
+        max_tokens = state.get("max_tokens", 1_000_000)
+        max_cost = state.get("max_cost_usd", 50.0)
+        
+        if current_tokens > max_tokens:
+            raise ValueError(f"CRITICAL: Token budget exceeded ({current_tokens} > {max_tokens}). Halting.")
+        if current_cost > max_cost:
+            raise ValueError(f"CRITICAL: Cost budget exceeded (${current_cost:.2f} > ${max_cost:.2f}). Halting.")
+
         start_time = time.time()
         start_tokens = cost_tracker.total_tokens
         start_cost = cost_tracker.total_cost
@@ -378,24 +415,29 @@ def bootstrapper_node(state: PipelineState):
     print("🔨 3. Bootstrapper creating REAL project...")
     gem_name = state.get("raw_idea", "NewGem")[:50]
     repo_path = create_project_structure(gem_name)
+    sandbox = ProjectSandbox(repo_path)
 
     # Write the Staff Audit if it exists
     audited = state.get("audited_context")
-    if audited and repo_path:
-        write_file(f"{repo_path}/STAFF_AUDIT.md", audited)
-        print("   → STAFF_AUDIT.md saved to repo")
-        # Index the staff audit
-        _index_files(state["run_id"], gem_name, [Path(repo_path) / "STAFF_AUDIT.md"], "audit")
+    if audited:
+        try:
+            p = sandbox.safe_write("STAFF_AUDIT.md", audited)
+            print("   → STAFF_AUDIT.md saved to repo")
+            # Index the staff audit
+            _index_files(state["run_id"], gem_name, [p], "audit")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
 
     # Write canonical docs now that the folder exists
     raw_output = state.get("canonical_docs", {}).get("_raw_output", "")
     if raw_output:
-        saved, saved_paths = parse_and_save_docs(raw_output, repo_path)
+        saved, saved_paths = parse_and_save_docs(raw_output, sandbox)
         canonical_docs = saved if saved else {"INTERROGATION.md": raw_output[:200]}
         if not saved:
-            p = Path(repo_path) / "INTERROGATION.md"
-            write_file(str(p), raw_output)
-            saved_paths = [p]
+            try:
+                p = sandbox.safe_write("INTERROGATION.md", raw_output)
+                saved_paths = [p]
+            except PermissionError: pass
         
         # Index canonical docs
         _index_files(state["run_id"], gem_name, saved_paths, "spec")
@@ -414,7 +456,9 @@ def bootstrapper_node(state: PipelineState):
             for p in Path(repo_path).glob("*") if p.is_file() and not p.name.startswith(".")
         }
     }
-    write_file(f"{repo_path}/BUILD_MANIFEST.json", json.dumps(manifest, indent=2))
+    try:
+        sandbox.safe_write("BUILD_MANIFEST.json", json.dumps(manifest, indent=2))
+    except PermissionError: pass
 
     return {
         "repo_path": repo_path,
@@ -429,6 +473,7 @@ def uiux_node(state: PipelineState):
     prompt = load_prompt("04_uiux_design.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     context = (
         f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
         f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
@@ -437,10 +482,12 @@ def uiux_node(state: PipelineState):
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
     response = cost_aware_invoke(messages)
     if repo_path:
-        p = Path(repo_path) / "UIUX_SPEC.md"
-        write_file(str(p), response.content)
-        print("   → UIUX_SPEC.md saved")
-        _index_files(state["run_id"], gem_name, [p], "spec")
+        try:
+            p = sandbox.safe_write("UIUX_SPEC.md", response.content)
+            print("   → UIUX_SPEC.md saved")
+            _index_files(state["run_id"], gem_name, [p], "spec")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
     return {"progress_log": ["✅ UI/UX spec complete"]}
 
 @logged_node
@@ -449,6 +496,7 @@ def architecture_node(state: PipelineState):
     prompt = load_prompt("05_architecture.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     context = (
         f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
         f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
@@ -457,10 +505,12 @@ def architecture_node(state: PipelineState):
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
     response = cost_aware_invoke(messages)
     if repo_path:
-        p = Path(repo_path) / "ARCHITECTURE.md"
-        write_file(str(p), response.content)
-        print("   → ARCHITECTURE.md saved")
-        _index_files(state["run_id"], gem_name, [p], "spec")
+        try:
+            p = sandbox.safe_write("ARCHITECTURE.md", response.content)
+            print("   → ARCHITECTURE.md saved")
+            _index_files(state["run_id"], gem_name, [p], "spec")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
     return {"architecture_complete": True, "progress_log": ["✅ Architecture complete"]}
 
 @logged_node
@@ -469,6 +519,7 @@ def business_strategist_node(state: PipelineState):
     prompt = load_prompt("23_business_strategist.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     
     # Context includes the primary docs for business alignment
     docs = state.get("canonical_docs", {})
@@ -482,11 +533,12 @@ def business_strategist_node(state: PipelineState):
     
     if repo_path:
         # Use our standard doc parser to save BUSINESS_STRATEGY.md
-        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, sandbox)
         if not saved:
-             p = Path(repo_path) / "BUSINESS_STRATEGY.md"
-             write_file(str(p), response.content)
-             saved_paths = [p]
+             try:
+                 p = sandbox.safe_write("BUSINESS_STRATEGY.md", response.content)
+                 saved_paths = [p]
+             except PermissionError: pass
         print("   → BUSINESS_STRATEGY.md saved")
         _index_files(state["run_id"], gem_name, saved_paths, "spec")
         
@@ -498,6 +550,7 @@ def landing_page_node(state: PipelineState):
     prompt = load_prompt("24_landing_page_generator.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     
     # Context includes the primary docs for landing page alignment
     strategy_path = f"{repo_path}/BUSINESS_STRATEGY.md"
@@ -516,11 +569,12 @@ def landing_page_node(state: PipelineState):
     
     if repo_path:
         # Use our standard doc parser to save LANDING_PAGE.html
-        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, sandbox)
         if not saved:
-             p = Path(repo_path) / "LANDING_PAGE.html"
-             write_file(str(p), response.content)
-             saved_paths = [p]
+             try:
+                 p = sandbox.safe_write("LANDING_PAGE.html", response.content)
+                 saved_paths = [p]
+             except PermissionError: pass
         print("   → LANDING_PAGE.html saved")
         _index_files(state["run_id"], gem_name, saved_paths, "spec")
         
@@ -532,6 +586,7 @@ def platform_decision_node(state: PipelineState):
     prompt = load_prompt("05b_platform_decision.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     polished_vision = state.get("polished_vision", "")
     arch_content = ""
     try:
@@ -545,10 +600,12 @@ def platform_decision_node(state: PipelineState):
     response = cost_aware_invoke(messages)
     manifest_data = parse_platform_manifest(response.content)
     if repo_path:
-        p = Path(repo_path) / "PLATFORM_MANIFEST.md"
-        write_file(str(p), response.content)
-        print("   → PLATFORM_MANIFEST.md saved")
-        _index_files(state["run_id"], gem_name, [p], "spec")
+        try:
+            p = sandbox.safe_write("PLATFORM_MANIFEST.md", response.content)
+            print("   → PLATFORM_MANIFEST.md saved")
+            _index_files(state["run_id"], gem_name, [p], "spec")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
     return {
         "selected_platform": manifest_data.get("selected_platform", ""),
         "selected_template": manifest_data.get("template", ""),
@@ -567,6 +624,7 @@ def code_orchestrator_node(state: PipelineState):
     print("🔨 6. Code Generation Orchestrator — launching real generators...")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     from tools.executor_tools import build_and_verify_xcode, parse_and_save_generated_code
 
     manifest_path = f"{repo_path}/PLATFORM_MANIFEST.md"
@@ -594,16 +652,15 @@ def code_orchestrator_node(state: PipelineState):
 
     def _safe_read(path: str) -> str:
         try:
-            with open(path, encoding="utf-8") as file:
-                return file.read()
+            return sandbox.safe_read(path)
         except Exception:
             return ""
 
     generator_context = (
         f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
         f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
-        f"UIUX_SPEC:\n{_safe_read(f'{repo_path}/UIUX_SPEC.md')}\n\n"
-        f"ARCHITECTURE:\n{_safe_read(f'{repo_path}/ARCHITECTURE.md')}\n\n"
+        f"UIUX_SPEC:\n{_safe_read('UIUX_SPEC.md')}\n\n"
+        f"ARCHITECTURE:\n{_safe_read('ARCHITECTURE.md')}\n\n"
         f"PLATFORM_MANIFEST:\n{manifest_content}"
     )
 
@@ -616,7 +673,7 @@ def code_orchestrator_node(state: PipelineState):
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         ui_response = cost_aware_invoke(messages)
         ui_paths = parse_and_save_generated_code(
-            repo_path,
+            sandbox,
             ui_response.content,
         )
         generator_write_counts["ui_code_generator"] = len(ui_paths)
@@ -627,7 +684,7 @@ def code_orchestrator_node(state: PipelineState):
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         logic_response = cost_aware_invoke(messages)
         logic_paths = parse_and_save_generated_code(
-            repo_path,
+            sandbox,
             logic_response.content,
         )
         generator_write_counts["core_logic_generator"] = len(logic_paths)
@@ -638,7 +695,7 @@ def code_orchestrator_node(state: PipelineState):
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         platform_response = cost_aware_invoke(messages)
         platform_paths = parse_and_save_generated_code(
-            repo_path,
+            sandbox,
             platform_response.content,
         )
         generator_write_counts["platform_specific_generator"] = len(platform_paths)
@@ -654,11 +711,12 @@ def code_orchestrator_node(state: PipelineState):
                 "generator_write_counts": generator_write_counts,
                 "malformed_generators": malformed_generators,
             }
-            if repo_path:
-                write_file(
-                    f"{repo_path}/GENERATOR_FAILURE.json",
+            try:
+                sandbox.safe_write(
+                    "GENERATOR_FAILURE.json",
                     json.dumps(error_payload, indent=2, sort_keys=True),
                 )
+            except PermissionError: pass
             print(f"   ❌ GENERATOR_OUTPUT_MALFORMED: {json.dumps(error_payload, sort_keys=True)}")
             raise ValueError(f"GENERATOR_OUTPUT_MALFORMED::{json.dumps(error_payload, sort_keys=True)}")
 
@@ -714,12 +772,15 @@ def frontend_node(state: PipelineState):
     prompt = load_prompt("06_frontend.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
-        p = Path(repo_path) / "FRONTEND_SPEC.md"
-        write_file(str(p), response.content)
-        _index_files(state["run_id"], gem_name, [p], "spec")
+        try:
+            p = sandbox.safe_write("FRONTEND_SPEC.md", response.content)
+            _index_files(state["run_id"], gem_name, [p], "spec")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
     return {"frontend_complete": True, "progress_log": ["✅ Frontend spec complete"]}
 
 @logged_node
@@ -728,12 +789,15 @@ def backend_node(state: PipelineState):
     prompt = load_prompt("07_backend.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
-        p = Path(repo_path) / "BACKEND_SPEC.md"
-        write_file(str(p), response.content)
-        _index_files(state["run_id"], gem_name, [p], "spec")
+        try:
+            p = sandbox.safe_write("BACKEND_SPEC.md", response.content)
+            _index_files(state["run_id"], gem_name, [p], "spec")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
     return {"backend_complete": True, "progress_log": ["✅ Backend spec complete"]}
 
 @logged_node
@@ -742,12 +806,15 @@ def data_node(state: PipelineState):
     prompt = load_prompt("08_data.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
-        p = Path(repo_path) / "DATA_SPEC.md"
-        write_file(str(p), response.content)
-        _index_files(state["run_id"], gem_name, [p], "spec")
+        try:
+            p = sandbox.safe_write("DATA_SPEC.md", response.content)
+            _index_files(state["run_id"], gem_name, [p], "spec")
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
     return {"data_complete": True, "progress_log": ["✅ Data spec complete"]}
 
 # ---- SEQUENTIAL CHAIN ----
@@ -762,13 +829,15 @@ def infra_node(state: PipelineState):
     prompt = load_prompt("10_infra.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
     if repo_path:
-        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, sandbox)
         if not saved:
-            p = Path(repo_path) / "INFRA.md"
-            write_file(str(p), response.content)
-            saved_paths = [p]
+            try:
+                p = sandbox.safe_write("INFRA.md", response.content)
+                saved_paths = [p]
+            except PermissionError: pass
         print("   → Infrastructure spec saved")
         _index_files(state["run_id"], gem_name, saved_paths, "spec")
     return {"infra_complete": True, "progress_log": ["✅ Infra spec complete"]}
@@ -779,13 +848,15 @@ def cicd_node(state: PipelineState):
     prompt = load_prompt("11_cicd.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
     if repo_path:
-        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, sandbox)
         if not saved:
-            p = Path(repo_path) / "CICD.md"
-            write_file(str(p), response.content)
-            saved_paths = [p]
+            try:
+                p = sandbox.safe_write("CICD.md", response.content)
+                saved_paths = [p]
+            except PermissionError: pass
         print("   → CI/CD spec saved")
         _index_files(state["run_id"], gem_name, saved_paths, "spec")
     return {"cicd_complete": True, "progress_log": ["✅ CI/CD spec complete"]}
@@ -796,13 +867,15 @@ def sre_node(state: PipelineState):
     prompt = load_prompt("12_sre.md")
     repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
+    sandbox = ProjectSandbox(repo_path)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
     if repo_path:
-        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, sandbox)
         if not saved:
-            p = Path(repo_path) / "SRE.md"
-            write_file(str(p), response.content)
-            saved_paths = [p]
+            try:
+                p = sandbox.safe_write("SRE.md", response.content)
+                saved_paths = [p]
+            except PermissionError: pass
         print("   → SRE spec saved")
         _index_files(state["run_id"], gem_name, saved_paths, "spec")
     return {"sre_complete": True, "progress_log": ["✅ SRE spec complete"]}
@@ -855,10 +928,12 @@ def qa_generator_node(state: PipelineState):
     """19_qa_generator.md — generates platform-appropriate tests"""
     print("🧪 19. QA Generator running...")
     prompt = load_prompt("19_qa_generator.md")
+    repo_path = state.get("repo_path", "")
     gem_name = state.get("raw_idea", "NewGem")[:50]
-    messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project at: {state['repo_path']}\nPlatform: {state['selected_platform']}\nGenerate tests now.")]
+    sandbox = ProjectSandbox(repo_path)
+    messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project at: {repo_path}\nPlatform: {state['selected_platform']}\nGenerate tests now.")]
     response = cost_aware_invoke(messages)
-    saved, saved_paths = parse_and_save_docs(response.content, state["repo_path"])
+    saved, saved_paths = parse_and_save_docs(response.content, sandbox)
     _index_files(state["run_id"], gem_name, saved_paths, "test")
     return {
         "tests_generated": True,
@@ -886,12 +961,12 @@ def director_node(state: PipelineState):
     print("🎬 20b. Director Review running...")
     prompt = load_prompt("13_director.md")
     repo_path = state.get("repo_path", "")
+    sandbox = ProjectSandbox(repo_path)
     
     def _safe_read(filename):
         try:
-            with open(f"{repo_path}/{filename}", encoding="utf-8") as f:
-                return f.read()
-        except OSError:
+            return sandbox.safe_read(filename)
+        except Exception:
             return f"[{filename} not yet available]"
 
     context = (
@@ -906,8 +981,10 @@ def director_node(state: PipelineState):
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     
     if repo_path:
-        write_file(f"{repo_path}/DIRECTOR_REVIEW.md", response.content)
-        print("   → DIRECTOR_REVIEW.md saved")
+        try:
+            sandbox.safe_write("DIRECTOR_REVIEW.md", response.content)
+            print("   → DIRECTOR_REVIEW.md saved")
+        except PermissionError: pass
         
     is_green = "GREEN LIGHT" in response.content.upper()
     rejection_count = state.get("director_rejection_count", 0)

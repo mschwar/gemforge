@@ -67,7 +67,7 @@ class BuildCache:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS build_cache (
                     input_hash TEXT NOT NULL,
@@ -82,7 +82,7 @@ class BuildCache:
     def get(self, input_hash: str, step_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a cached result (check local first, then remote)."""
         # 1. Local Check
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 "SELECT output_json FROM build_cache WHERE input_hash = ? AND step_id = ?",
@@ -106,7 +106,7 @@ class BuildCache:
     def set(self, input_hash: str, step_id: str, output: Dict[str, Any], skip_remote: bool = False):
         """Store a result in the cache."""
         # 1. Local Store
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO build_cache (input_hash, step_id, output_json, created_at) VALUES (?, ?, ?, ?)",
                 (input_hash, step_id, json.dumps(output), datetime.now(timezone.utc).isoformat())

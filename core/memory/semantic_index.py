@@ -36,7 +36,7 @@ class SemanticIndexer:
         return self._model
 
     def _init_sqlite(self):
-        with sqlite3.connect(self.sqlite_path) as conn:
+        with sqlite3.connect(self.sqlite_path, timeout=30) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS semantic_docs (
                     doc_id TEXT PRIMARY KEY,
@@ -100,7 +100,7 @@ class SemanticIndexer:
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
-        with sqlite3.connect(self.sqlite_path) as conn:
+        with sqlite3.connect(self.sqlite_path, timeout=30) as conn:
             conn.execute(
                 "INSERT INTO semantic_docs (doc_id, run_id, project_name, path, doc_type, content_hash, chunk_count, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

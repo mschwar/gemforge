@@ -24,9 +24,9 @@ def build_failure_signature(platform: str, runner: str, raw_output: str) -> str:
     else:
         kind = "unknown-runtime-error"
 
-    # 2. Extract failing path/file if possible
-    # Looks for patterns like /path/to/file.ext or ./file.ext
-    path_match = re.search(r"([A-Za-z0-9_./-]+\.(ts|tsx|js|jsx|py|swift|kt|dart))", raw_output)
+    # 2. Extract failing filename if possible
+    # Order extensions by length (desc) to avoid partial matches
+    path_match = re.search(r"([A-Za-z0-9_.-]+\.(tsx|jsx|swift|dart|json|yaml|yml|py|ts|js|kt))", raw_output)
     path = path_match.group(1) if path_match else "n/a"
     
     # Ensure platform and runner are normalized

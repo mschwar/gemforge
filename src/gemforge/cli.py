@@ -318,7 +318,7 @@ def cmd_build_status(args):
     print(f"  🏗️  Build Status for run: {run_id}")
     print(f"{'═' * 60}")
     
-    with sqlite3.connect(taint_manager.db_path) as conn:
+    with sqlite3.connect(taint_manager.db_path, timeout=30) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.execute("SELECT node_id, reason, created_at FROM tainted_nodes WHERE run_id = ?", (run_id,))
         tainted = cur.fetchall()

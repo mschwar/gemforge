@@ -12,7 +12,7 @@ class OutboxStore:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS event_outbox (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +27,7 @@ class OutboxStore:
 
     def save_event(self, event_dict: Dict[str, Any]):
         priority = event_dict.get("priority", 5)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute(
                 "INSERT INTO event_outbox (event_json, priority, published, created_at) VALUES (?, ?, 0, ?)",
                 (json.dumps(event_dict), priority, datetime.now(timezone.utc).isoformat())
@@ -35,7 +35,7 @@ class OutboxStore:
             conn.commit()
 
     def get_unpublished_events(self, limit: int = 100, event_type_prefix: Optional[str] = None, exclude_prefix: Optional[str] = None) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.row_factory = sqlite3.Row
             query = "SELECT * FROM event_outbox WHERE published = 0"
             params = []
@@ -57,7 +57,7 @@ class OutboxStore:
     def mark_as_published(self, event_ids: List[int]):
         if not event_ids:
             return
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             placeholders = ",".join("?" for _ in event_ids)
             conn.execute(
                 f"UPDATE event_outbox SET published = 1 WHERE id IN ({placeholders})",

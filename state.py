@@ -76,6 +76,10 @@ class PipelineState(TypedDict):
     total_tokens: int
     total_cost: float
 
+    # Budget & Protection
+    max_tokens: int
+    max_cost_usd: float
+
     # Agentic Repair (Blueprint 02)
     repair_count: int
     repair_history: List[Dict[str, Any]]
@@ -142,6 +146,9 @@ def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = 
             "discipline_enforced": True,
             "last_audit_timestamp": enforcer.timestamp(),
             "protocol_version": "v1.0",
+            # Budget
+            "max_tokens": 1_000_000,
+            "max_cost_usd": 50.0,
             # Repair
             "repair_count": 0,
             "repair_history": [],

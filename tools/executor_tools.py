@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 from tools.file_tools import ensure_dir, write_file
+from core.runtime.sandbox import ProjectSandbox
 
 
 def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
@@ -28,26 +29,23 @@ def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
     return candidate
 
 
-def parse_and_save_generated_code(repo_path: str, llm_response: str) -> list[Path]:
+def parse_and_save_generated_code(sandbox: ProjectSandbox, llm_response: str) -> list[Path]:
     """
-    Parse ===relative/path.ext=== code blocks and write files.
+    Parse ===relative/path.ext=== code blocks and write files securely.
     Returns a list of Path objects that were successfully written.
     """
     pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, llm_response, re.DOTALL)
 
     written_paths = []
-    output_root = Path(repo_path).resolve()
     for filename, content in matches:
-        destination = _resolve_generated_file_path(repo_path, filename)
-        if not destination:
+        try:
+            destination = sandbox.safe_write(filename, content.strip())
+            print(f"   ✅ Generated {filename}")
+            written_paths.append(destination)
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
             continue
-
-        ensure_dir(str(destination.parent))
-        write_file(str(destination), content.strip())
-        relative = destination.relative_to(output_root)
-        print(f"   ✅ Generated {relative}")
-        written_paths.append(destination)
 
     return written_paths
 

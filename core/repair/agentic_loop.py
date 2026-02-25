@@ -11,6 +11,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from core.llm import cost_aware_invoke, load_prompt
 from core.memory.retriever import semantic_retriever
 from core.repair.signature import build_failure_signature
+from core.build.hasher import calculate_string_hash
+from core.runtime.sandbox import ProjectSandbox
 from tools.executor_tools import parse_and_save_generated_code, run_tests
 from tools.file_tools import write_file
 
@@ -27,12 +29,13 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
     run_id = state.get("run_id", "unknown")
     repair_count = state.get("repair_count", 0) + 1
     
-    max_attempts = int(os.getenv("GEMFORGE_AUTO_REPAIR_MAX_ATTEMPTS", "3"))
-    write_cap = int(os.getenv("GEMFORGE_AUTO_REPAIR_WRITE_CAP", "8"))
-
     if not repo_path or not test_report:
         print("   ⚠️ Repair skipped: missing repo_path or test_report")
         return {"repair_status": "skipped"}
+
+    sandbox = ProjectSandbox(repo_path)
+    max_attempts = int(os.getenv("GEMFORGE_AUTO_REPAIR_MAX_ATTEMPTS", "3"))
+    write_cap = int(os.getenv("GEMFORGE_AUTO_REPAIR_WRITE_CAP", "8"))
 
     print(f"   🛠️ [REPAIR] Attempt {repair_count}/{max_attempts}...")
 
@@ -70,9 +73,11 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
     failing_file_content = ""
     if "path=" in signature and "|path=n/a" not in signature:
         failing_path_str = signature.split("path=")[-1]
-        failing_path = Path(repo_path) / failing_path_str
-        if failing_path.exists():
-            failing_file_content = f"\n### FAILING FILE CONTENT ({failing_path_str}):\n{failing_path.read_text(errors='ignore')}"
+        try:
+            content = sandbox.safe_read(failing_path_str)
+            if content:
+                failing_file_content = f"\n### FAILING FILE CONTENT ({failing_path_str}):\n{content}"
+        except PermissionError: pass
 
     user_content = (
         f"PROJECT_PATH: {repo_path}\n"
@@ -90,13 +95,25 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
     print(f"   🧪 [REPAIR] Surgeon is thinking (Strategy: {strategy})...")
     response = cost_aware_invoke(messages)
     
+    # 4b. Novelty Check (Fix 3)
+    patch_content = response.content.strip()
+    patch_hash = calculate_string_hash(patch_content)
+    history = state.get("repair_history", [])
+    
+    if any(h.get("patch_hash") == patch_hash for h in history):
+        print("   ⚠️ [REPAIR] Novelty check failed: Surgeon proposed identical patch. Aborting to prevent loop.")
+        return {
+            "tests_passed": False,
+            "repair_status": "stalled_identical_patch",
+            "progress_log": ["❌ Agentic Repair stalled: Surgeon proposed identical patch"]
+        }
+
     # 5. Apply Patch (with safety cap check)
     print(f"   🩹 [REPAIR] Applying patches...")
-    written_paths = parse_and_save_generated_code(repo_path, response.content)
+    written_paths = parse_and_save_generated_code(sandbox, response.content)
     
     if len(written_paths) > write_cap:
         print(f"   ⚠️ [REPAIR] Safety violation: modified {len(written_paths)} files, cap is {write_cap}.")
-        # We still continue but log it. In a stricter environment, we might revert.
 
     # 6. Verify Fix
     print(f"   🧪 [REPAIR] Verifying fix...")
@@ -110,16 +127,17 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "attempt_id": attempt_id,
         "run_id": run_id,
         "signature": signature,
+        "patch_hash": patch_hash,
         "attempt_number": repair_count,
         "strategy": strategy,
-        "files_modified": [str(p.relative_to(repo_path)) for p in written_paths],
+        "files_modified": [str(p.relative_to(sandbox.root)) for p in written_paths],
         "status": status,
         "test_report": test_result["report"],
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
     # SQLite Ledger
-    with sqlite3.connect(str(_DB_PATH)) as conn:
+    with sqlite3.connect(str(_DB_PATH), timeout=30) as conn:
         conn.execute(
             "INSERT INTO repair_attempts (attempt_id, run_id, failure_signature, attempt_number, strategy, candidate_patch_summary, status, tests_report, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -141,7 +159,9 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
         report_md += f"  - `{p}`\n"
     report_md += f"\n## Test Result\n{test_result['report']}\n"
     
-    write_file(f"{repo_path}/REPAIR_REPORT_A{repair_count}.md", report_md)
+    try:
+        sandbox.safe_write(f"REPAIR_REPORT_A{repair_count}.md", report_md)
+    except PermissionError: pass
 
     # Index successful repairs
     if status == "succeeded" and written_paths:

@@ -13,7 +13,7 @@ class TaintManager:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS tainted_nodes (
                     run_id TEXT NOT NULL,
@@ -32,7 +32,7 @@ class TaintManager:
         import datetime
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             for nid in affected_nodes:
                 conn.execute(
                     "INSERT OR REPLACE INTO tainted_nodes (run_id, node_id, reason, created_at) VALUES (?, ?, ?, ?)",
@@ -43,7 +43,7 @@ class TaintManager:
 
     def is_tainted(self, run_id: str, node_id: str) -> bool:
         """Checks if a specific node is tainted for a run."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             cursor = conn.execute(
                 "SELECT 1 FROM tainted_nodes WHERE run_id = ? AND node_id = ?",
                 (run_id, node_id)
@@ -52,7 +52,7 @@ class TaintManager:
 
     def clear_taint(self, run_id: str, node_id: str):
         """Removes the taint from a node after it has been successfully rerun."""
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute(
                 "DELETE FROM tainted_nodes WHERE run_id = ? AND node_id = ?",
                 (run_id, node_id)

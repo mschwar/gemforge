@@ -15,7 +15,7 @@ class EventLogger:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS step_events (
                     event_id TEXT PRIMARY KEY,
@@ -31,7 +31,7 @@ class EventLogger:
             conn.commit()
 
     def log_event(self, event: StepEvent):
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.execute(
                 "INSERT INTO step_events (event_id, run_id, step_id, event_type, attempt, payload_json, created_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -48,7 +48,7 @@ class EventLogger:
             conn.commit()
 
     def get_run_events(self, run_id: str) -> List[Dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 "SELECT * FROM step_events WHERE run_id = ? ORDER BY created_at ASC",
@@ -57,7 +57,7 @@ class EventLogger:
             return [dict(row) for row in cursor.fetchall()]
 
     def get_recent_runs(self, limit: int = 10) -> List[str]:
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite3.connect(self.db_path, timeout=30) as conn:
             cursor = conn.execute(
                 "SELECT DISTINCT run_id FROM step_events ORDER BY created_at DESC LIMIT ?",
                 (limit,)
