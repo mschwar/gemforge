@@ -67,7 +67,8 @@ class ReliabilityGuardsTests(unittest.TestCase):
             "director_rejection_count": 2,
         }
 
-        result = director_node(state)
+        director = getattr(director_node, "__wrapped__", director_node)
+        result = director(state)
 
         self.assertFalse(result["director_approved"])
         self.assertEqual(result["director_rejection_count"], 3)
@@ -83,7 +84,8 @@ class ReliabilityGuardsTests(unittest.TestCase):
             "director_rejection_count": 0,
         }
 
-        result = director_node(state)
+        director = getattr(director_node, "__wrapped__", director_node)
+        result = director(state)
 
         self.assertFalse(result["director_approved"])
         self.assertEqual(result["director_rejection_count"], 1)

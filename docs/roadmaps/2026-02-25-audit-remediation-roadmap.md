@@ -166,7 +166,7 @@ Scope: Close coverage and ergonomics gaps so human and AI contributors can safel
 1. Standardize test invocation so `pytest` and `python -m pytest` both work from repo root (GF-008).
 2. Add integration-focused tests for `new → review pause → resume approve/refine` critical flow (GF-008).
 3. Add tests for deploy/publish failure-state reporting and gating interactions (GF-007, GF-008).
-4. Split orchestration concerns into stage modules (`pipeline/stages/*.py`) to lower blast radius of edits (cross-cutting).
+4. Split orchestration concerns into stage modules (`core/pipeline_stages/*.py`) to lower blast radius of edits (cross-cutting).
 5. Add concise architectural map and state-transition docs for AI coding assistants (cross-cutting AI-DX).
 
 ### Gates
@@ -183,6 +183,17 @@ Scope: Close coverage and ergonomics gaps so human and AI contributors can safel
 ### Exit Criteria
 - Critical-path tests are mandatory in CI.
 - New contributors can run and validate full local flow from README steps without path workarounds.
+
+### Status
+- Executed on 2026-02-25:
+  - Added test bootstrap so both `pytest -q` and `python -m pytest -q` run from repo root without manual path hacks.
+  - Added integration coverage for `new -> review pause -> resume approve/refine`.
+  - Added deploy/publish interaction tests that assert `partial` vs `blocked` routing outcomes.
+  - Extracted shared failure/routing/context logic into `core/pipeline_stages/*` and rewired `pipeline.py` to consume it.
+  - Added AI-DX architecture and state-transition map documentation plus CI enforcement for both test entrypoints.
+- Gate evidence:
+  - `pytest -q` → `32 passed`
+  - `python -m pytest -q` → `32 passed`
 
 ## Traceability Matrix (All Findings Covered)
 | Finding | Phase(s) | Closure Mechanism |

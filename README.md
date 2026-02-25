@@ -23,6 +23,17 @@ List your forged projects:
 gemforge list
 ```
 
+## Test Commands
+
+Use either entrypoint from repo root:
+
+```bash
+pytest -q
+python -m pytest -q
+```
+
+Both commands are enforced in CI at `.github/workflows/ci.yml`.
+
 ## The Pipeline
 
 The full 24-node factory runs automatically:
@@ -81,6 +92,10 @@ gemforge/
 ├── dashboard.py     # Streamlit empire stats dashboard
 └── checkpoints.db   # Persists state across pauses (SqliteSaver)
 ```
+
+Architecture/stage ownership map:
+
+- `docs/architecture/PIPELINE_STAGE_MAP.md`
 
 ## Requirements
 

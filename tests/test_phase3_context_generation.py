@@ -65,7 +65,7 @@ class GeneratorGuardTests(unittest.TestCase):
     )
     @patch("pipeline.load_prompt", return_value="generator-prompt")
     @patch("pipeline.cost_aware_invoke", return_value=SimpleNamespace(content="No generated blocks here"))
-    @patch("tools.executor_tools.parse_and_save_generated_code", return_value=0)
+    @patch("tools.executor_tools.parse_and_save_generated_code", return_value=[])
     @patch.dict("os.environ", {"GEMFORGE_MIN_GENERATOR_WRITES": "1"}, clear=False)
     def test_code_orchestrator_fails_on_zero_generated_writes(
         self,
@@ -77,6 +77,8 @@ class GeneratorGuardTests(unittest.TestCase):
     ):
         repo = Path(tempfile.mkdtemp(prefix="gemforge-orchestrator-"))
         state = {
+            "run_id": "gem-phase3-test",
+            "raw_idea": "generator guard",
             "repo_path": str(repo),
             "polished_vision": "vision",
             "audited_context": "audit",
