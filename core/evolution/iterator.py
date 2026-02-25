@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
+
 from core.evolution.prompt_loader import prompt_loader
+
 
 class IterationEngine:
     def __init__(self, projects_root: str = None):
@@ -27,10 +29,10 @@ class IterationEngine:
                 if any(file.endswith(ext) for ext in extensions):
                     rel_path = os.path.relpath(os.path.join(root, file), str(project_path))
                     try:
-                        with open(os.path.join(root, file), "r", encoding="utf-8") as f:
+                        with open(os.path.join(root, file), encoding="utf-8") as f:
                             content = f.read()
                         context.append(f"===FILE: {rel_path}===\n{content}\n")
-                    except:
+                    except OSError:
                         pass
         
         return "\n".join(context)

@@ -1,10 +1,13 @@
 import json
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+_FACTORY_ROOT = Path(__file__).resolve().parent.parent.parent
 
 class UserTasteManager:
-    def __init__(self, path: str = "memory/user_taste.json"):
-        self.path = Path(path)
+    def __init__(self, path: str = None):
+        resolved = Path(path).resolve() if path else _FACTORY_ROOT / "memory" / "user_taste.json"
+        self.path = resolved
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():
             self._init_default()
@@ -37,6 +40,10 @@ class UserTasteManager:
         self.data["last_updated"] = datetime.now().isoformat()
         self.path.write_text(json.dumps(self.data, indent=2))
 
+    def reload(self):
+        """Re-read from disk — useful after an external write (e.g., Weaver update)."""
+        self.data = json.loads(self.path.read_text())
+
     def get_context_for_evolver(self, max_entries: int = 15) -> str:
         """Returns formatted string to inject into every evolution prompt."""
         lines = ["=== USER TASTE MEMORY (HIGH PRIORITY) ==="]
@@ -47,3 +54,7 @@ class UserTasteManager:
         for entry in sorted(self.data["feedback_history"], key=lambda x: x["weight"], reverse=True)[:max_entries]:
             lines.append(f"[{entry['category']}] {entry['feedback']}")
         return "\n".join(lines)
+
+
+# Module-level singleton — shared across all callers to avoid redundant file reads.
+user_taste_manager = UserTasteManager()

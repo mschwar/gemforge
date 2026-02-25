@@ -1,7 +1,7 @@
+import json
 import subprocess
-import os
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Project types that cannot be hosted on Vercel
 NATIVE_KEYWORDS = [
@@ -67,6 +67,36 @@ def create_minimal_landing_page(repo_path: str, gem_name: str):
     print("   → index.html landing page created")
 
 
+def _is_framework_web_project(repo_path: str) -> bool:
+    """Detect framework projects so we don't overwrite their deploy config."""
+    root = Path(repo_path)
+    package_json = root / "package.json"
+
+    if package_json.exists():
+        try:
+            data = json.loads(package_json.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+
+        deps = {}
+        deps.update(data.get("dependencies", {}))
+        deps.update(data.get("devDependencies", {}))
+        if any(name in deps for name in ("next", "react-scripts", "vite", "@sveltejs/kit", "nuxt")):
+            return True
+
+    return any(
+        (root / marker).exists()
+        for marker in (
+            "next.config.mjs",
+            "next.config.js",
+            "vite.config.ts",
+            "vite.config.js",
+            "nuxt.config.ts",
+            "nuxt.config.js",
+        )
+    )
+
+
 def deploy_to_vercel(repo_path: str, idea: str = "") -> str | None:
     """
     Deploy to Vercel. Returns the live URL on success, None otherwise.
@@ -80,16 +110,20 @@ def deploy_to_vercel(repo_path: str, idea: str = "") -> str | None:
     abs_path = str(Path(repo_path).resolve())
     print("🚀 Deploying to Vercel...")
 
-    # Ensure there's something for Vercel to serve
-    create_minimal_landing_page(abs_path, idea or Path(abs_path).name)
+    if _is_framework_web_project(abs_path):
+        print("   → Framework project detected; preserving existing framework deploy behavior.")
+    else:
+        # Only use the static fallback for non-framework repos.
+        create_minimal_landing_page(abs_path, idea or Path(abs_path).name)
 
-    # Write a proper static vercel.json
-    vercel_config = Path(abs_path) / "vercel.json"
-    vercel_config.write_text(
-        '{"version": 2, "builds": [{"src": "index.html", "use": "@vercel/static"}], '
-        '"routes": [{"src": "/(.*)", "dest": "/index.html"}]}',
-        encoding="utf-8",
-    )
+        # Write a static vercel.json only if the project does not already define one.
+        vercel_config = Path(abs_path) / "vercel.json"
+        if not vercel_config.exists():
+            vercel_config.write_text(
+                '{"version": 2, "builds": [{"src": "index.html", "use": "@vercel/static"}], '
+                '"routes": [{"src": "/(.*)", "dest": "/index.html"}]}',
+                encoding="utf-8",
+            )
 
     result = subprocess.run(
         ["npx", "vercel", "--prod", "--yes"],

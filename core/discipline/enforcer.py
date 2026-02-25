@@ -4,13 +4,14 @@ Enforces the exact 8-step Discipline Protocol for every operation.
 Zero external dependencies. Pure stdlib + subprocess for git.
 """
 
-import subprocess
-from pathlib import Path
-from datetime import datetime
-from contextlib import contextmanager
 import os
-from typing import Optional, Callable
+import subprocess
+from collections.abc import Callable
+from contextlib import contextmanager
+from datetime import datetime
 from functools import wraps
+from pathlib import Path
+
 
 class DisciplineEnforcer:
     """Central enforcer for the 8-step Discipline Protocol."""
@@ -24,7 +25,7 @@ class DisciplineEnforcer:
         return datetime.now().strftime("%Y-%m-%d %H:%M MST")
 
     @staticmethod
-    def read_all_state(project_path: Optional[Path] = None) -> dict:
+    def read_all_state(project_path: Path | None = None) -> dict:
         """Step 1: Read PERSISTENT.md, progress.txt, LESSONS.md (factory + project)"""
         state = {"factory": {}, "project": {}}
         factory = DisciplineEnforcer.FACTORY_ROOT
@@ -60,12 +61,16 @@ class DisciplineEnforcer:
 
     @staticmethod
     def disciplined_commit(repo_path: Path, step_number: int, short_name: str, description: str):
-        """Step 6 & 7: Exact-format git commit + push"""
+        """Step 6 & 7: Exact-format git commit + optional push.
+        Push only when GEMFORGE_AUTO_PUSH=true is set in the environment."""
         message = f"step {step_number}: {short_name} - {description}"
         DisciplineEnforcer.git_command(repo_path, ["add", "."])
         DisciplineEnforcer.git_command(repo_path, ["commit", "-m", message])
-        DisciplineEnforcer.git_command(repo_path, ["push"])
-        print(f"✅ [D-Protocol] Steps 6–7: Committed & pushed → {message}")
+        if os.getenv("GEMFORGE_AUTO_PUSH", "false").lower() == "true":
+            DisciplineEnforcer.git_command(repo_path, ["push"])
+            print(f"✅ [D-Protocol] Steps 6–7: Committed & pushed → {message}")
+        else:
+            print(f"✅ [D-Protocol] Steps 6–7: Committed (push skipped — set GEMFORGE_AUTO_PUSH=true to enable) → {message}")
 
     @staticmethod
     def log_audit(entry: str):
@@ -87,7 +92,7 @@ class DisciplineEnforcer:
 
 # Context manager for full protocol flow (used by all agents)
 @contextmanager
-def discipline_step(step_number: int, short_name: str, description: str, generated_project_path: Optional[Path] = None):
+def discipline_step(step_number: int, short_name: str, description: str, generated_project_path: Path | None = None):
     """Full 8-step enforcement context.
     Usage:
         with discipline_step(5, "Discipline Foundations", "Initial enforcer module"):
@@ -104,7 +109,7 @@ def discipline_step(step_number: int, short_name: str, description: str, generat
 
     # Step 1: Read state
     print("1. Reading current state (PERSISTENT + progress + LESSONS)...")
-    state = enforcer.read_all_state(generated_project_path)
+    enforcer.read_all_state(generated_project_path)
 
     try:
         # Step 2: PERFORM THE WORK (yield to calling code)
@@ -122,13 +127,16 @@ def discipline_step(step_number: int, short_name: str, description: str, generat
                 description
             )
         
-        # Always commit the factory itself
-        enforcer.disciplined_commit(
-            enforcer.FACTORY_ROOT,
-            step_number,
-            short_name,
-            description
-        )
+        # Factory-root commits are opt-in to avoid staging unrelated in-flight work.
+        if os.getenv("GEMFORGE_COMMIT_FACTORY_ROOT", "false").lower() == "true":
+            enforcer.disciplined_commit(
+                enforcer.FACTORY_ROOT,
+                step_number,
+                short_name,
+                description
+            )
+        else:
+            print("ℹ️ [D-Protocol] Factory-root commit skipped (set GEMFORGE_COMMIT_FACTORY_ROOT=true to enable).")
 
 # Decorator for easy agent wrapping
 def enforce_protocol(step_number: int, short_name: str, description: str):

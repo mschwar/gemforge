@@ -4,11 +4,16 @@ Version: 1.0.0
 Summary: GemForge — Local AI Product Factory
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
-Requires-Dist: langgraph>=0.2
-Requires-Dist: langchain-anthropic
-Requires-Dist: python-dotenv
-Requires-Dist: pydantic
-Requires-Dist: jinja2
+Requires-Dist: langgraph==1.0.9
+Requires-Dist: langchain==1.2.10
+Requires-Dist: langchain-anthropic==1.3.4
+Requires-Dist: langchain-core==1.2.15
+Requires-Dist: langgraph-checkpoint-sqlite==3.0.3
+Requires-Dist: anthropic==0.83.0
+Requires-Dist: pydantic==2.12.5
+Requires-Dist: python-dotenv==1.2.1
+Requires-Dist: jinja2==3.1.6
+Requires-Dist: streamlit==1.54.0
 
 # GemForge — Your Personal AI Product Factory
 
@@ -89,3 +94,10 @@ Then use from anywhere:
     gemforge new "Your raw idea"
 
 One-command install coming soon via Homebrew tap.
+
+## Cost Tracking (Module 5)
+Every run now shows:
+
+    💰 Total cost: $X.XXXX | Tokens: XXXX | Calls: XX
+
+Real-time tracking + final report included.

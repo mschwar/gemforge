@@ -1,7 +1,8 @@
-from pathlib import Path
 import re
+from pathlib import Path
 
 from tools.file_tools import ensure_dir, write_file
+from core.runtime.sandbox import ProjectSandbox
 
 
 def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
@@ -9,39 +10,44 @@ def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
     if not cleaned:
         return None
 
-    output_path = Path(repo_path)
+    output_path = Path(repo_path).resolve()
+
     if "/" in cleaned:
-        return output_path / cleaned
+        candidate = (output_path / cleaned).resolve()
+    elif cleaned.endswith(".swift"):
+        candidate = (output_path / "Sources" / cleaned).resolve()
+    else:
+        candidate = (output_path / cleaned).resolve()
 
-    if cleaned.endswith(".swift"):
-        return output_path / "Sources" / cleaned
+    # Guard: reject paths that escape the project directory (path traversal)
+    try:
+        candidate.relative_to(output_path)
+    except ValueError:
+        print(f"   ⚠️ SECURITY: Rejected path traversal attempt: {filename!r} → {candidate}")
+        return None
 
-    return output_path / cleaned
+    return candidate
 
 
-def parse_and_save_generated_code(repo_path: str, llm_response: str):
+def parse_and_save_generated_code(sandbox: ProjectSandbox, llm_response: str) -> list[Path]:
     """
-    Parse ===relative/path.ext=== code blocks and write files.
-
-    Backward-compatible behavior:
-    - bare .swift filenames are written under Sources/
-    - other bare filenames are written to repo root
+    Parse ===relative/path.ext=== code blocks and write files securely.
+    Returns a list of Path objects that were successfully written.
     """
     pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, llm_response, re.DOTALL)
 
-    written_count = 0
+    written_paths = []
     for filename, content in matches:
-        destination = _resolve_generated_file_path(repo_path, filename)
-        if not destination:
+        try:
+            destination = sandbox.safe_write(filename, content.strip())
+            print(f"   ✅ Generated {filename}")
+            written_paths.append(destination)
+        except PermissionError as e:
+            print(f"   ⚠️ SECURITY: {e}")
             continue
 
-        ensure_dir(str(destination.parent))
-        write_file(str(destination), content.strip())
-        print(f"   ✅ Generated {destination.relative_to(repo_path)}")
-        written_count += 1
-
-    return written_count
+    return written_paths
 
 
 def build_and_verify_xcode(repo_path: str):
@@ -90,7 +96,6 @@ def run_tests(repo_path: str, platform: str) -> dict:
     """
     import subprocess
     from pathlib import Path
-    import os
 
     repo = Path(repo_path)
     if not repo.exists():
@@ -106,8 +111,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
     }
 
     try:
-        os.chdir(repo)
-
+        # NOTE: os.chdir is intentionally avoided here; use cwd= on subprocess calls instead.
         if "ios" in platform.lower() or "swift" in platform.lower():
             print("🧪 Running XCTest for iOS...")
             
@@ -130,7 +134,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
                 "-quiet"
             ]
             result["command"] = " ".join(cmd)
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180, cwd=str(repo))
             output = proc.stdout + "\n" + proc.stderr
             result["details"] = output[-4000:]  # last 4k chars
             result["success"] = proc.returncode == 0
@@ -141,7 +145,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
             print("🧪 Running Jest for web project...")
             cmd = ["npm", "test", "--", "--watchAll=false", "--ci", "--coverage"]
             result["command"] = " ".join(cmd)
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(repo))
             output = proc.stdout + "\n" + proc.stderr
             result["details"] = output[-3000:]
             result["success"] = proc.returncode == 0
@@ -149,9 +153,10 @@ def run_tests(repo_path: str, platform: str) -> dict:
             result["failures"] = output.count("fail") or (0 if result["success"] else 1)
 
         else:
-            print(f"🧪 No dedicated test runner for {platform} yet → marking as skipped (success for pipeline)")
-            result["success"] = True
-            result["report"] = f"Tests skipped for {platform} (extend run_tests for full support)"
+            print(f"🧪 No dedicated test runner for {platform} yet → failing closed")
+            result["success"] = False
+            result["failures"] = 1
+            result["report"] = f"No dedicated test runner for {platform}"
 
         print(f"   → {result['report']}")
         return result
@@ -160,4 +165,3 @@ def run_tests(repo_path: str, platform: str) -> dict:
         return {"success": False, "report": "Test execution timed out (180s)", "passed": False, "failures": 999, "details": "Timeout"}
     except Exception as e:
         return {"success": False, "report": f"Test runner error: {str(e)}", "passed": False, "failures": 1, "details": str(e)}
-

@@ -1,0 +1,223 @@
+{
+  "main": {
+    "id": "216d151435124d1e",
+    "type": "split",
+    "children": [
+      {
+        "id": "3b5851d7c349a532",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "6d296a447dce0d92",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Feat-Product_Re-Manufacturer.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Feat-Product_Re-Manufacturer"
+            }
+          },
+          {
+            "id": "ccb7c5e29abe52d6",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "GemForge Pipeline Audit — 2026-02-25"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "33d32c8e1551ce0d",
+    "type": "split",
+    "children": [
+      {
+        "id": "a6b1f6c4f28f3fff",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "9f649dd1ea5e9fec",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "872227a56860d65c",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "9e586190e9201c04",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "7264ef25c4feae0c",
+    "type": "split",
+    "children": [
+      {
+        "id": "95e9d66d6411d02c",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f42428793dea94c7",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for GemForge Pipeline Audit — 2026-02-25"
+            }
+          },
+          {
+            "id": "b7ed0a07c3d75d7a",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from GemForge Pipeline Audit — 2026-02-25"
+            }
+          },
+          {
+            "id": "6b537291496532b6",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "5c1305cc3adfdadc",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "f415864f27422e86",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "GemForge Pipeline Audit — 2026-02-25.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of GemForge Pipeline Audit — 2026-02-25"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "ccb7c5e29abe52d6",
+  "lastOpenFiles": [
+    "core/runtime/__pycache__/sandbox.cpython-312.pyc",
+    "core/runtime/sandbox.py",
+    "tests/__pycache__/test_dependency_integrity.cpython-312-pytest-9.0.2.pyc",
+    "tests/test_dependency_integrity.py",
+    "test_checkpoints.db-shm",
+    "test_checkpoints.db-wal",
+    "test_checkpoints.db",
+    "memory/build_cache.db-shm",
+    "memory/build_cache.db-wal",
+    "tests/__pycache__/test_blueprint_03_build.cpython-312-pytest-9.0.2.pyc",
+    "core/runtime/__pycache__/reducer.cpython-312.pyc",
+    "docs/architecture/PIPELINE_STAGE_MAP.md",
+    "docs/roadmaps/2026-02-25-audit-remediation-roadmap.md",
+    "docs/blueprints/BLUEPRINT_03_DETERMINISTIC_BUILD_GRAPH_INCREMENTAL_CACHE.md",
+    "docs/blueprints/BLUEPRINT_02_SEMANTIC_MEMORY_AGENTIC_REPAIR_LOOP.md",
+    "docs/blueprints/BLUEPRINT_01_EVENT_DRIVEN_FORGE_RUNTIME.md",
+    "Feat-Product_Re-Manufacturer.md",
+    "GemForge Pipeline Audit — 2026-02-25.md",
+    "Audit.md"
+  ]
+}

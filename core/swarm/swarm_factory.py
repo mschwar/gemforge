@@ -1,10 +1,13 @@
+import hashlib
 import os
 import re
-import hashlib
 from pathlib import Path
-from langchain_core.messages import SystemMessage, HumanMessage
-from pipeline import cost_aware_invoke, load_prompt
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from core.llm import cost_aware_invoke, load_prompt
 from tools.file_tools import write_file
+
 
 class SwarmFactory:
     def __init__(self):
@@ -60,10 +63,10 @@ class SwarmFactory:
         if not os.path.exists(prompt_path):
             raise FileNotFoundError(f"Specialist prompt not found: {prompt_path}")
             
-        with open(prompt_path, "r", encoding="utf-8") as f:
+        with open(prompt_path, encoding="utf-8") as f:
             system_prompt = f.read()
             
-        print(f"🐝 Specialist Agent running...")
+        print("🐝 Specialist Agent running...")
         
         user_input = f"""
 MISSION: {mission}

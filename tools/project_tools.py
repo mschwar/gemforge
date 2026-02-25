@@ -5,12 +5,15 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-
 TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "templates"
 
 
 def _normalize_identifier(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+
+
+def _compact_identifier(value: str) -> str:
+    return _normalize_identifier(value).replace("-", "")
 
 
 def _extract_section(content: str, heading: str) -> str:
@@ -153,6 +156,15 @@ def parse_platform_manifest(manifest_content: str) -> dict:
         key, value = line.split(":", 1)
         generator_flags[_normalize_identifier(key)] = value.strip()
 
+    # If the LLM returned freeform prose instead of strict headings, infer from template aliases.
+    if not selected_platform or not template_name:
+        inferred = _infer_template_from_freeform_manifest(manifest_content)
+        if inferred:
+            if not selected_platform:
+                selected_platform = inferred["platform"]
+            if not template_name:
+                template_name = inferred["name"]
+
     if not template_name and selected_platform:
         template_name = selected_platform
 
@@ -160,6 +172,74 @@ def parse_platform_manifest(manifest_content: str) -> dict:
         "selected_platform": selected_platform.strip(),
         "template": template_name.strip(),
         "generator_flags": generator_flags,
+    }
+
+
+def _infer_template_from_freeform_manifest(manifest_content: str) -> dict | None:
+    normalized_text = _normalize_identifier(manifest_content)
+    compact_text = _compact_identifier(manifest_content)
+    best_match = None
+    best_score = -1
+    best_position = 10**9
+    positive_context_markers = ("frontend", "framework", "selected-platform", "project-template", "recommended")
+    negative_context_markers = ("lack", "future", "later", "optional", "missing", "however")
+
+    def _has_token(window: str, marker: str) -> bool:
+        return bool(re.search(rf"(^|-){re.escape(marker)}(-|$)", window))
+
+    for template in list_templates():
+        template_name_norm = _normalize_identifier(str(template.get("name", "")))
+        platform_norm = _normalize_identifier(str(template.get("platform", "")))
+
+        for alias in template.get("aliases", []):
+            normalized_alias = _normalize_identifier(alias)
+            if not normalized_alias:
+                continue
+
+            compact_alias = normalized_alias.replace("-", "")
+            matched = False
+            score = 0
+            position = 10**9
+
+            alias_specificity = 0
+            if normalized_alias in {template_name_norm, platform_norm}:
+                alias_specificity = 4
+
+            # Prefer explicit word-boundary style matches in normalized text.
+            boundary_match = re.search(rf"(^|-){re.escape(normalized_alias)}(-|$)", normalized_text)
+            if boundary_match:
+                matched = True
+                position = boundary_match.start()
+                score = len(normalized_alias) + alias_specificity + 1
+            elif compact_alias and compact_alias in compact_text:
+                matched = True
+                position = compact_text.index(compact_alias)
+                score = len(compact_alias) + alias_specificity
+
+            if matched:
+                start = max(0, position - 60)
+                end = min(len(normalized_text), position + 80)
+                context_window = normalized_text[start:end]
+                if any(_has_token(context_window, marker) for marker in positive_context_markers):
+                    score += 3
+                if any(_has_token(context_window, marker) for marker in negative_context_markers):
+                    score -= 8
+
+                # If scores are close, prefer whichever appears earlier in the manifest.
+                if (
+                    score > best_score + 2
+                    or (abs(score - best_score) <= 2 and position < best_position)
+                ):
+                    best_score = score
+                    best_position = position
+                    best_match = template
+
+    if not best_match:
+        return None
+
+    return {
+        "name": str(best_match.get("name", "")).strip(),
+        "platform": str(best_match.get("platform", "")).strip(),
     }
 
 
@@ -306,7 +386,7 @@ targets:
 """
     path = f"{repo_path}/project.yml"
     Path(path).write_text(content, encoding="utf-8")
-    print(f"   → project.yml written")
+    print("   → project.yml written")
     return path
 
 

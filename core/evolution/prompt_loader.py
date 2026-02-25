@@ -1,10 +1,14 @@
 import json
 from pathlib import Path
+
 from core.memory.user_taste_manager import UserTasteManager
 
+_FACTORY_ROOT = Path(__file__).resolve().parent.parent.parent
+
 class PromptLoader:
-    def __init__(self, agents_root: str = "agents"):
-        self.agents_root = Path(agents_root)
+    def __init__(self, agents_root: str = None):
+        root = Path(agents_root).resolve() if agents_root else _FACTORY_ROOT / "agents"
+        self.agents_root = root
         self.prompts_dir = self.agents_root / "prompts"
         self.taste_mgr = UserTasteManager()
 
@@ -28,7 +32,7 @@ class PromptLoader:
                 try:
                     meta = json.loads(metadata_path.read_text())
                     active_version = meta.get("active_version", "v1")
-                except:
+                except (json.JSONDecodeError, OSError):
                     pass
             
             version_path = agent_dir / f"{active_version}.md"

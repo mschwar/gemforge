@@ -6,8 +6,15 @@ from core.discipline.enforcer import DisciplineEnforcer, discipline_step
 class PipelineState(TypedDict):
     """This is the single source of truth that travels through every agent."""
 
+    # Run context
+    run_id: str
+
     # Input from user
     raw_idea: str
+    source_docs_path: str | None
+
+    # After Document Auditor
+    audited_context: str | None
 
     # After Vision Polisher
     polished_vision: str
@@ -40,6 +47,7 @@ class PipelineState(TypedDict):
     data_complete: bool
     qa_complete: bool
     director_approved: bool
+    director_rejection_count: int  # tracks repeated rejections for manual intervention alerts
     infra_complete: bool
     cicd_complete: bool
     sre_complete: bool
@@ -49,6 +57,10 @@ class PipelineState(TypedDict):
     live_url: str | None
     deploy_status: str | None
     shipping_complete: bool
+    pipeline_status: str  # "in_progress", "success", "partial", "blocked"
+    error_code: str | None
+    error_stage: str | None
+    operator_action: str | None
 
     # QA / Testing Layer (Module 2)
     tests_generated: bool
@@ -64,17 +76,32 @@ class PipelineState(TypedDict):
     total_tokens: int
     total_cost: float
 
+    # Budget & Protection
+    max_tokens: int
+    max_cost_usd: float
+
+    # Agentic Repair (Blueprint 02)
+    repair_count: int
+    repair_history: List[Dict[str, Any]]
+    repair_status: str | None # "succeeded", "failed", "max_attempts_reached"
+
     # === DISCIPLINE PROTOCOL INTEGRATION ===
     discipline_enforced: bool
     last_audit_timestamp: str | None
     protocol_version: str
 
-def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
+def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = None) -> PipelineState:
     """Disciplined factory — always used instead of manual dicts."""
-    with discipline_step(5, "StateInit", f"Create disciplined initial state for idea: {raw_idea[:60]}..."):
+    # Create run_id from raw_idea for traceability
+    run_id = f"gem-{raw_idea[:60].replace(' ', '-').replace('/', '')}"
+    
+    with discipline_step(5, "StateInit", f"Create disciplined initial state for run: {run_id}"):
         enforcer = DisciplineEnforcer()
         state: PipelineState = {
+            "run_id": run_id,
             "raw_idea": raw_idea,
+            "source_docs_path": source_docs_path,
+            "audited_context": None,
             "polished_vision": "",
             "vision_approved": False,
             "human_feedback": None,
@@ -95,6 +122,7 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "data_complete": False,
             "qa_complete": False,
             "director_approved": False,
+            "director_rejection_count": 0,
             "infra_complete": False,
             "cicd_complete": False,
             "sre_complete": False,
@@ -102,6 +130,10 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "live_url": None,
             "deploy_status": None,
             "shipping_complete": False,
+            "pipeline_status": "in_progress",
+            "error_code": None,
+            "error_stage": None,
+            "operator_action": None,
             "tests_generated": False,
             "tests_passed": False,
             "test_report": "",
@@ -113,7 +145,14 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             # Discipline fields
             "discipline_enforced": True,
             "last_audit_timestamp": enforcer.timestamp(),
-            "protocol_version": "v1.0"
+            "protocol_version": "v1.0",
+            # Budget
+            "max_tokens": 1_000_000,
+            "max_cost_usd": 50.0,
+            # Repair
+            "repair_count": 0,
+            "repair_history": [],
+            "repair_status": None
         }
         enforcer.log_audit(f"Initial PipelineState created for thread {raw_idea[:30]}...")
         return state

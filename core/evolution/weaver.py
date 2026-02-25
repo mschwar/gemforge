@@ -1,13 +1,13 @@
 import re
-import json
-from pathlib import Path
-from core.memory.lessons_manager import LessonsManager
-from core.memory.user_taste_manager import UserTasteManager
+
+from core.memory.lessons_manager import lessons_manager
+from core.memory.user_taste_manager import user_taste_manager
+
 
 def parse_and_log_weaver_output(llm_output: str, gem_id: str):
     """Parses Weaver output blocks and updates DB/Taste."""
-    lessons_mgr = LessonsManager()
-    taste_mgr = UserTasteManager()
+    lessons_mgr = lessons_manager
+    taste_mgr = user_taste_manager
     
     # 1. Lessons
     lesson_pattern = r"===LESSON===\n(.*?)(?=\n===|\Z)"
@@ -22,7 +22,7 @@ def parse_and_log_weaver_output(llm_output: str, gem_id: str):
         impact_val = 5
         try:
             impact_val = int(data.get("impact", 5))
-        except:
+        except (ValueError, TypeError):
             pass
 
         lessons_mgr.log_lesson(
@@ -47,7 +47,7 @@ def parse_and_log_weaver_output(llm_output: str, gem_id: str):
             weight_val = 10
             try:
                 weight_val = int(data.get("weight", 10))
-            except:
+            except (ValueError, TypeError):
                 pass
             
             taste_mgr.add_feedback(
