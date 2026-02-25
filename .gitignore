@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+.thread_id
+checkpoints.db
+checkpoints.db-shm
+checkpoints.db-wal
+projects/
