@@ -1,7 +1,6 @@
 import subprocess
-import os
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Project types that cannot be hosted on Vercel
 NATIVE_KEYWORDS = [

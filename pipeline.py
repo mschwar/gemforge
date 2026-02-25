@@ -1,46 +1,49 @@
 from dotenv import load_dotenv
-load_dotenv()
-from core.discipline.enforcer import enforce_protocol, discipline_step
-from state import create_initial_pipeline_state
 
-from langgraph.graph import StateGraph, END
-from langgraph.types import interrupt
-from langgraph.checkpoint.sqlite import SqliteSaver
+load_dotenv()
+
+import os
+import re
 import sqlite3
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import SystemMessage, HumanMessage
+from pathlib import Path
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
+
+from core.llm import cost_aware_invoke, load_prompt
 from state import PipelineState
-from tools.file_tools import create_project_structure, write_file
 from tools.deploy_tools import deploy_to_vercel
+from tools.executor_tools import run_tests
+from tools.file_tools import create_project_structure, write_file
+from tools.git_tools import push_to_github
 from tools.project_tools import (
     apply_template,
     generate_xcode_project,
     parse_platform_manifest,
 )
-from tools.executor_tools import run_tests
-from tools.git_tools import push_to_github
-from core.evolution.prompt_loader import prompt_loader
-import os
-import re
-from pathlib import Path
 
-llm = ChatAnthropic(model="claude-3-haiku-20240307", temperature=0)
-
-def load_prompt(filename: str) -> str:
-    # Support both legacy calls and new agent_ids
-    agent_id = filename.replace(".md", "")
-    return prompt_loader.load_active_prompt(agent_id)
 
 def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
-    """Parse ===FILENAME=== blocks and write each to disk."""
+    """Parse ===FILENAME=== blocks and write each to disk.
+
+    Uses re.findall so every block is captured, including the last one,
+    regardless of whether the response ends with a trailing delimiter.
+    Accepts .md, .txt, .yml, .yaml, .html, .json, and bare filenames with
+    a path separator so ops agents can write to subdirectories.
+    """
     saved = {}
-    pattern = r"===([^=]+\.md|[^=]+\.txt)==="
-    parts = re.split(pattern, response_text)
-    for i in range(1, len(parts) - 1, 2):
-        filename = parts[i].strip()
-        content = parts[i + 1].strip()
-        write_file(f"{repo_path}/{filename}", content)
-        saved[filename] = content[:200]  # store preview in state
+    pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
+    matches = re.findall(pattern, response_text, re.DOTALL)
+    for filename, content in matches:
+        filename = filename.strip()
+        # Ignore fenced-code-block language tags that look like ===python===
+        if not any(filename.endswith(ext) for ext in (".md", ".txt", ".yml", ".yaml", ".html", ".json")) \
+                and "/" not in filename:
+            continue
+        write_file(f"{repo_path}/{filename}", content.strip())
+        saved[filename] = content.strip()[:200]
         print(f"   → Saved {filename}")
     return saved
 
@@ -205,7 +208,7 @@ def landing_page_node(state: PipelineState):
     strategy_path = f"{repo_path}/BUSINESS_STRATEGY.md"
     strategy_content = ""
     if os.path.exists(strategy_path):
-        with open(strategy_path, "r") as f:
+        with open(strategy_path) as f:
             strategy_content = f.read()
 
     context = (
@@ -233,7 +236,7 @@ def platform_decision_node(state: PipelineState):
     arch_content = ""
     try:
         arch_path = f"{repo_path}/ARCHITECTURE.md"
-        with open(arch_path, "r", encoding="utf-8") as f:
+        with open(arch_path, encoding="utf-8") as f:
             arch_content = f.read()
     except Exception:
         pass
@@ -260,12 +263,12 @@ def platform_decision_node(state: PipelineState):
 def code_orchestrator_node(state: PipelineState):
     print("🔨 6. Code Generation Orchestrator — launching real generators...")
     repo_path = state.get("repo_path", "")
-    from tools.executor_tools import parse_and_save_generated_code, build_and_verify_xcode
+    from tools.executor_tools import build_and_verify_xcode, parse_and_save_generated_code
 
     manifest_path = f"{repo_path}/PLATFORM_MANIFEST.md"
     manifest_content = ""
     if os.path.exists(manifest_path):
-        with open(manifest_path, "r", encoding="utf-8") as manifest_file:
+        with open(manifest_path, encoding="utf-8") as manifest_file:
             manifest_content = manifest_file.read()
     manifest_data = parse_platform_manifest(manifest_content)
 
@@ -287,7 +290,7 @@ def code_orchestrator_node(state: PipelineState):
 
     def _safe_read(path: str) -> str:
         try:
-            with open(path, "r", encoding="utf-8") as file:
+            with open(path, encoding="utf-8") as file:
                 return file.read()
         except Exception:
             return ""
@@ -345,11 +348,30 @@ def code_orchestrator_node(state: PipelineState):
 
 # ---- PARALLEL AGENTS (return only changed keys — required for parallel execution) ----
 
+def _read_spec_file(repo_path: str, filename: str) -> str:
+    """Read a generated spec file from the project directory."""
+    if not repo_path:
+        return "[not available]"
+    try:
+        with open(f"{repo_path}/{filename}", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return f"[{filename} not yet generated]"
+
+def _build_parallel_context(state: PipelineState) -> str:
+    repo_path = state.get("repo_path", "")
+    return (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"UIUX_SPEC:\n{_read_spec_file(repo_path, 'UIUX_SPEC.md')}\n\n"
+        f"ARCHITECTURE:\n{_read_spec_file(repo_path, 'ARCHITECTURE.md')}\n\n"
+        f"PLATFORM: {state.get('selected_platform', 'web')}"
+    )
+
 def frontend_node(state: PipelineState):
     print("🔨 7. Frontend Agent (parallel)...")
     prompt = load_prompt("06_frontend.md")
     repo_path = state.get("repo_path", "")
-    context = f"POLISHED_VISION:\n{state['polished_vision']}\n\nARCHITECTURE:\n{state.get('architecture_complete')}"
+    context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
         write_file(f"{repo_path}/FRONTEND_SPEC.md", response.content)
@@ -359,7 +381,7 @@ def backend_node(state: PipelineState):
     print("🔨 8. Backend Agent (parallel)...")
     prompt = load_prompt("07_backend.md")
     repo_path = state.get("repo_path", "")
-    context = f"POLISHED_VISION:\n{state['polished_vision']}\n\nARCHITECTURE:\n{state.get('architecture_complete')}"
+    context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
         write_file(f"{repo_path}/BACKEND_SPEC.md", response.content)
@@ -369,7 +391,7 @@ def data_node(state: PipelineState):
     print("🔨 9. Data Architecture Agent (parallel)...")
     prompt = load_prompt("08_data.md")
     repo_path = state.get("repo_path", "")
-    context = f"POLISHED_VISION:\n{state['polished_vision']}\n\nARCHITECTURE:\n{state.get('architecture_complete')}"
+    context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
         write_file(f"{repo_path}/DATA_SPEC.md", response.content)
@@ -377,17 +399,51 @@ def data_node(state: PipelineState):
 
 # ---- SEQUENTIAL CHAIN ----
 
+def _ops_context(state: PipelineState) -> str:
+    """Shared context for infra/cicd/sre agents."""
+    repo_path = state.get("repo_path", "")
+    return (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"PLATFORM: {state.get('selected_platform', 'web')}\n\n"
+        f"ARCHITECTURE:\n{_read_spec_file(repo_path, 'ARCHITECTURE.md')}\n\n"
+        f"DIRECTOR_REVIEW:\n{_read_spec_file(repo_path, 'DIRECTOR_REVIEW.md')}"
+    )
+
 def infra_node(state: PipelineState):
     print("🔨 10. Infrastructure Agent...")
-    return {"infra_complete": True, "progress_log": ["✅ Infra complete"]}
+    prompt = load_prompt("10_infra.md")
+    repo_path = state.get("repo_path", "")
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
+    if repo_path:
+        saved = parse_and_save_docs(response.content, repo_path)
+        if not saved:
+            write_file(f"{repo_path}/INFRA.md", response.content)
+        print("   → Infrastructure spec saved")
+    return {"infra_complete": True, "progress_log": ["✅ Infra spec complete"]}
 
 def cicd_node(state: PipelineState):
     print("🔨 11. CI/CD Agent...")
-    return {"cicd_complete": True, "progress_log": ["✅ CI/CD complete"]}
+    prompt = load_prompt("11_cicd.md")
+    repo_path = state.get("repo_path", "")
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
+    if repo_path:
+        saved = parse_and_save_docs(response.content, repo_path)
+        if not saved:
+            write_file(f"{repo_path}/CICD.md", response.content)
+        print("   → CI/CD spec saved")
+    return {"cicd_complete": True, "progress_log": ["✅ CI/CD spec complete"]}
 
 def sre_node(state: PipelineState):
     print("🔨 12. SRE & Observability Agent...")
-    return {"sre_complete": True, "progress_log": ["✅ SRE complete"]}
+    prompt = load_prompt("12_sre.md")
+    repo_path = state.get("repo_path", "")
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
+    if repo_path:
+        saved = parse_and_save_docs(response.content, repo_path)
+        if not saved:
+            write_file(f"{repo_path}/SRE.md", response.content)
+        print("   → SRE spec saved")
+    return {"sre_complete": True, "progress_log": ["✅ SRE spec complete"]}
 
 def deploy_node(state: PipelineState):
     print("🔨 13. Final Deploy Agent...")
@@ -435,7 +491,7 @@ def qa_generator_node(state: PipelineState):
     prompt = load_prompt("19_qa_generator.md")
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project at: {state['repo_path']}\nPlatform: {state['selected_platform']}\nGenerate tests now.")]
     response = cost_aware_invoke(messages)
-    saved = parse_and_save_docs(response.content, state["repo_path"])
+    parse_and_save_docs(response.content, state["repo_path"])
     return {
         "tests_generated": True,
         "test_report": "Tests generated — see TESTS_SUMMARY.md",
@@ -462,10 +518,10 @@ def director_node(state: PipelineState):
     
     def _safe_read(filename):
         try:
-            with open(f"{repo_path}/{filename}", "r") as f:
+            with open(f"{repo_path}/{filename}", encoding="utf-8") as f:
                 return f.read()
-        except:
-            return "File not found."
+        except OSError:
+            return f"[{filename} not yet available]"
 
     context = (
         f"POLISHED_VISION:\n{state['polished_vision']}\n\n"
@@ -521,7 +577,7 @@ def shipping_node(state: PipelineState):
     strategy_path = Path(repo_path) / "BUSINESS_STRATEGY.md"
     strategy = ""
     if os.path.exists(strategy_path):
-        with open(strategy_path, "r") as f:
+        with open(strategy_path) as f:
             strategy = f.read()
             
     launch_shipper.prepare_launch_manifest(repo_path, vision, strategy, platform)
@@ -536,8 +592,8 @@ def shipping_node(state: PipelineState):
 def weaver_node(state: PipelineState):
     """21_weaver_reflector.md — extracts lessons & updates user taste"""
     print("🕸️  22. Weaver Reflector (v2.0) running...")
-    from core.evolution.weaver import parse_and_log_weaver_output
     from core.evolution.iterator import IterationEngine
+    from core.evolution.weaver import parse_and_log_weaver_output
     
     prompt = load_prompt("21_weaver_reflector.md")
     gem_id = state.get("raw_idea", "Unknown")[:30]
@@ -569,18 +625,10 @@ def weaver_node(state: PipelineState):
     }
 
 
-# ====================== COST-AWARE LLM WRAPPER (Module 5) ======================
-from tools.cost_tracker import cost_tracker
-
-def cost_aware_invoke(prompt_messages):
-    """Every LLM call now tracked automatically."""
-    response = llm.invoke(prompt_messages)
-    cost_tracker.track_call(response)
-    return response
-
-with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discipline Protocol v1.0 enforced"):
+def _build_pipeline():
+    """Build and return the compiled LangGraph pipeline. Called once at entry-point startup."""
     workflow = StateGraph(PipelineState)
-    
+
     nodes = [
         ("document_auditor", document_auditor_node),
         ("vision_polisher", vision_polisher_node),
@@ -603,23 +651,23 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
         ("cicd", cicd_node),
         ("sre", sre_node),
         ("deploy", deploy_node),
-    ("git_publish", git_publish_node),
-    ("shipping", shipping_node),
-    ("weaver", weaver_node),
+        ("git_publish", git_publish_node),
+        ("shipping", shipping_node),
+        ("weaver", weaver_node),
     ]
     for name, func in nodes:
         workflow.add_node(name, func)
-    
+
     workflow.set_entry_point("document_auditor")
     workflow.add_edge("document_auditor", "vision_polisher")
     workflow.add_edge("vision_polisher", "human_review")
-    
+
     workflow.add_conditional_edges(
         "human_review",
         route_after_review,
-        {"ruthless_interrogator": "ruthless_interrogator", "vision_polisher": "vision_polisher"}
+        {"ruthless_interrogator": "ruthless_interrogator", "vision_polisher": "vision_polisher"},
     )
-    
+
     workflow.add_edge("ruthless_interrogator", "bootstrapper")
     workflow.add_edge("bootstrapper", "uiux")
     workflow.add_edge("uiux", "architecture")
@@ -627,24 +675,24 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge("business_strategist", "landing_page")
     workflow.add_edge("landing_page", "platform_decision")
     workflow.add_edge("platform_decision", "code_orchestrator")
-    
+
     # Fan-out: code_orchestrator → frontend + backend + data (parallel)
     workflow.add_edge("code_orchestrator", "frontend")
     workflow.add_edge("code_orchestrator", "backend")
     workflow.add_edge("code_orchestrator", "data")
-    
-    # Fan-in: all three → qa
+
+    # Fan-in: all three → qa_generator
     workflow.add_edge(["frontend", "backend", "data"], "qa_generator")
     workflow.add_edge("qa_generator", "qa")
-    
+
     workflow.add_edge("qa", "director")
-    
+
     workflow.add_conditional_edges(
         "director",
         lambda s: "infra" if s.get("director_approved", False) else "human_review",
-        {"human_review": "human_review", "infra": "infra"}
+        {"human_review": "human_review", "infra": "infra"},
     )
-    
+
     workflow.add_edge("infra", "cicd")
     workflow.add_edge("cicd", "sre")
     workflow.add_edge("sre", "deploy")
@@ -652,10 +700,15 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge("git_publish", "shipping")
     workflow.add_edge("shipping", "weaver")
     workflow.add_edge("weaver", END)
-    
-    conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
+
+    _db_path = Path(__file__).resolve().parent / "checkpoints.db"
+    conn = sqlite3.connect(str(_db_path), check_same_thread=False)
     memory = SqliteSaver(conn)
-    pipeline_app = workflow.compile(checkpointer=memory)
-    
-    print("✅ PIPELINE v8 READY — Real Swift code generation + Xcode project + build verification! (Discipline Protocol v1.0 ENFORCED)")
+    app = workflow.compile(checkpointer=memory)
+    print("✅ PIPELINE READY — GemForge multi-agent factory compiled.")
+    return app
+
+
+# Lazily built on first import — no side effects (git commits, file reads) at import time.
+pipeline_app = _build_pipeline()
     

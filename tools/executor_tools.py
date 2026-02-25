@@ -1,5 +1,5 @@
-from pathlib import Path
 import re
+from pathlib import Path
 
 from tools.file_tools import ensure_dir, write_file
 
@@ -99,7 +99,6 @@ def run_tests(repo_path: str, platform: str) -> dict:
     """
     import subprocess
     from pathlib import Path
-    import os
 
     repo = Path(repo_path)
     if not repo.exists():

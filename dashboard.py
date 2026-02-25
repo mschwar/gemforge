@@ -33,7 +33,8 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Gems Forged", empire_stats.get_project_count())
 with col2:
-    st.metric("Total Investment", "$0.00", "0.00%") # Placeholder for total cost
+    total_cost = empire_stats.get_total_costs()
+    st.metric("Total Investment", f"${total_cost:.4f}")
 with col3:
     weaver_stats = empire_stats.get_weaver_stats()
     st.metric("Lessons Learned", weaver_stats["total_lessons"])

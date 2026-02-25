@@ -1,6 +1,6 @@
-import os
 import subprocess
 from pathlib import Path
+
 
 def get_high_signal_files(root_path: str) -> list[Path]:
     """

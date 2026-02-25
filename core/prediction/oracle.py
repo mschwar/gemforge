@@ -1,10 +1,12 @@
 import json
 import re
-from pathlib import Path
+
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from core.llm import cost_aware_invoke, load_prompt
 from core.memory.lessons_manager import LessonsManager
 from core.memory.user_taste_manager import UserTasteManager
-from pipeline import cost_aware_invoke, load_prompt
-from langchain_core.messages import SystemMessage, HumanMessage
+
 
 class Oracle:
     def __init__(self):
@@ -16,14 +18,14 @@ class Oracle:
         Uses the Oracle (Agent 27) to generate high-ROI ideas.
         Returns a list of idea dictionaries.
         """
-        print(f"🔮 The Oracle is meditating on your taste and market trends...")
+        print("🔮 The Oracle is meditating on your taste and market trends...")
         
         prompt = load_prompt("27_predictive_idea_engine.md")
         
         # Gather deep context (Pillar 1+8)
         taste_context = self.taste_mgr.get_context_for_evolver()
         recent_lessons = self.lessons_mgr.get_recent_lessons(limit=10)
-        lessons_summary = "\n".join([f"- {l[4]} ({l[3]})" for l in recent_lessons])
+        lessons_summary = "\n".join([f"- {lesson[4]} ({lesson[3]})" for lesson in recent_lessons])
         
         user_content = f"""
 USER_TASTE:

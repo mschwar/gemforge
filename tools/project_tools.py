@@ -5,7 +5,6 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-
 TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "templates"
 
 
@@ -306,7 +305,7 @@ targets:
 """
     path = f"{repo_path}/project.yml"
     Path(path).write_text(content, encoding="utf-8")
-    print(f"   → project.yml written")
+    print("   → project.yml written")
     return path
 
 

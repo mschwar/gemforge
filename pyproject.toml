@@ -9,12 +9,16 @@ description = "GemForge — Local AI Product Factory"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "langgraph>=0.2",
-    "langchain-anthropic",
-    "python-dotenv",
-    "pydantic",
-    "jinja2",
-    "streamlit"
+    "langgraph==1.0.9",
+    "langchain==1.2.10",
+    "langchain-anthropic==1.3.4",
+    "langchain-core==1.2.15",
+    "langgraph-checkpoint-sqlite==3.0.3",
+    "anthropic==0.83.0",
+    "pydantic==2.12.5",
+    "python-dotenv==1.2.1",
+    "jinja2==3.1.6",
+    "streamlit==1.54.0",
 ]
 
 [project.scripts]
@@ -22,3 +26,17 @@ gemforge = "gemforge.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E = pycodestyle errors, F = pyflakes, I = isort, UP = pyupgrade
+select = ["E", "F", "I", "UP"]
+ignore = [
+    "E501",   # line too long — handled by formatter, not enforced as error
+]
+
+[dependency-groups]
+dev = ["ruff"]
