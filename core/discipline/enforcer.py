@@ -110,9 +110,25 @@ def discipline_step(step_number: int, short_name: str, description: str, generat
         # Step 2: PERFORM THE WORK (yield to calling code)
         yield enforcer
     finally:
-        # In bootstrap phase we call Steps 3–8 manually after the block.
-        # In full v1 integration this can auto-trigger.
-        pass
+        # Step 3-8: AUTOMATIC ENFORCEMENT
+        enforcer.log_audit(f"Completed Step {step_number}: {short_name}")
+        
+        # If we are in a repo, commit the changes
+        if generated_project_path and generated_project_path.exists():
+            enforcer.disciplined_commit(
+                generated_project_path, 
+                step_number, 
+                short_name, 
+                description
+            )
+        
+        # Always commit the factory itself
+        enforcer.disciplined_commit(
+            enforcer.FACTORY_ROOT,
+            step_number,
+            short_name,
+            description
+        )
 
 # Decorator for easy agent wrapping
 def enforce_protocol(step_number: int, short_name: str, description: str):

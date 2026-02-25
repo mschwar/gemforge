@@ -110,6 +110,13 @@ def run_tests(repo_path: str, platform: str) -> dict:
 
         if "ios" in platform.lower() or "swift" in platform.lower():
             print("🧪 Running XCTest for iOS...")
+            
+            # Check for xcode-select developer tools vs full Xcode
+            check_xc = subprocess.run(["xcode-select", "-p"], capture_output=True, text=True)
+            if "CommandLineTools" in check_xc.stdout:
+                result["report"] = "FAIL: System is set to CommandLineTools. Run: sudo xcode-select -s /Applications/Xcode.app"
+                return result
+
             # Auto-detect scheme from .xcodeproj name
             xcodeprojs = list(repo.glob("*.xcodeproj"))
             if not xcodeprojs:
@@ -119,7 +126,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
             cmd = [
                 "xcodebuild", "test",
                 "-scheme", scheme,
-                "-destination", "platform=iOS Simulator,name=iPhone 16 Pro,OS=latest",
+                "-destination", "platform=iOS Simulator,name=iPhone 16", # Use standard name
                 "-quiet"
             ]
             result["command"] = " ".join(cmd)

@@ -313,16 +313,34 @@ def code_orchestrator_node(state: PipelineState):
 # ---- PARALLEL AGENTS (return only changed keys — required for parallel execution) ----
 
 def frontend_node(state: PipelineState):
-    print("🔨 6. Frontend Agent (parallel)...")
-    return {"frontend_complete": True, "progress_log": ["✅ Frontend complete"]}
+    print("🔨 7. Frontend Agent (parallel)...")
+    prompt = load_prompt("06_frontend.md")
+    repo_path = state.get("repo_path", "")
+    context = f"POLISHED_VISION:\n{state['polished_vision']}\n\nARCHITECTURE:\n{state.get('architecture_complete')}"
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
+    if repo_path:
+        write_file(f"{repo_path}/FRONTEND_SPEC.md", response.content)
+    return {"frontend_complete": True, "progress_log": ["✅ Frontend spec complete"]}
 
 def backend_node(state: PipelineState):
-    print("🔨 7. Backend Agent (parallel)...")
-    return {"backend_complete": True, "progress_log": ["✅ Backend complete"]}
+    print("🔨 8. Backend Agent (parallel)...")
+    prompt = load_prompt("07_backend.md")
+    repo_path = state.get("repo_path", "")
+    context = f"POLISHED_VISION:\n{state['polished_vision']}\n\nARCHITECTURE:\n{state.get('architecture_complete')}"
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
+    if repo_path:
+        write_file(f"{repo_path}/BACKEND_SPEC.md", response.content)
+    return {"backend_complete": True, "progress_log": ["✅ Backend spec complete"]}
 
 def data_node(state: PipelineState):
-    print("🔨 8. Data Architecture Agent (parallel)...")
-    return {"data_complete": True, "progress_log": ["✅ Data complete"]}
+    print("🔨 9. Data Architecture Agent (parallel)...")
+    prompt = load_prompt("08_data.md")
+    repo_path = state.get("repo_path", "")
+    context = f"POLISHED_VISION:\n{state['polished_vision']}\n\nARCHITECTURE:\n{state.get('architecture_complete')}"
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
+    if repo_path:
+        write_file(f"{repo_path}/DATA_SPEC.md", response.content)
+    return {"data_complete": True, "progress_log": ["✅ Data spec complete"]}
 
 # ---- SEQUENTIAL CHAIN ----
 
@@ -451,17 +469,25 @@ def weaver_node(state: PipelineState):
     """21_weaver_reflector.md — extracts lessons & updates user taste"""
     print("🕸️  22. Weaver Reflector (v2.0) running...")
     from core.evolution.weaver import parse_and_log_weaver_output
+    from core.evolution.iterator import IterationEngine
     
     prompt = load_prompt("21_weaver_reflector.md")
     gem_id = state.get("raw_idea", "Unknown")[:30]
     
+    # NEW: Gather actual code context so Weaver can see WHY things failed
+    code_context = ""
+    repo_path = state.get("repo_path")
+    if repo_path and os.path.exists(repo_path):
+        engine = IterationEngine()
+        code_context = engine.get_project_context(Path(repo_path).name)
+
     # Collect context for the Weaver
     context = (
         f"RAW_IDEA: {state.get('raw_idea')}\n"
         f"POLISHED_VISION: {state.get('polished_vision')}\n"
         f"HUMAN_FEEDBACK: {state.get('human_feedback')}\n"
         f"TEST_REPORT: {state.get('test_report')}\n"
-        f"REPO_PATH: {state.get('repo_path')}\n"
+        f"GENERATED_CODE:\n{code_context[:5000]}\n" # Limit context
     )
     
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Analyze this gem history:\n\n{context}")]
