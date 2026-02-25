@@ -16,7 +16,7 @@ import argparse  # noqa: E402
 import datetime  # noqa: E402
 import os  # noqa: E402
 
-from pipeline import pipeline_app  # noqa: E402
+from pipeline import get_pipeline_app  # noqa: E402
 from state import create_initial_pipeline_state  # noqa: E402
 
 
@@ -57,7 +57,7 @@ def cmd_new(args):
     config = {"configurable": {"thread_id": thread_id}}
 
     print("\n🚀 Launching full factory...\n")
-    result = pipeline_app.invoke(initial_state, config)
+    result = get_pipeline_app().invoke(initial_state, config)
 
     from tools.cost_tracker import cost_tracker
     cost_tracker.finalize_session()

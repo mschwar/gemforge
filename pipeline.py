@@ -114,7 +114,17 @@ def vision_polisher_node(state: PipelineState):
     }
 
 def human_review_node(state: PipelineState):
-    print("⏸️  HUMAN APPROVAL GATE — waiting for you...")
+    print("\n" + "─" * 80)
+    print("  POLISHED VISION")
+    print("─" * 80)
+    print(state.get("polished_vision", ""))
+    print("─" * 80)
+    print("\n⏸️  HUMAN APPROVAL GATE — pipeline is paused.")
+    print()
+    print("  Run one of these commands to continue:")
+    print("    python resume.py approve")
+    print("    python resume.py refine \"Your feedback here\"")
+    print()
     decision = interrupt("Review the polished vision. Approve or request refinements.")
     updates = {"approval_status": decision.get("action", "pending")}
     if decision.get("feedback"):
@@ -738,6 +748,18 @@ def _build_pipeline():
     return app
 
 
-# Lazily built on first import — no side effects (git commits, file reads) at import time.
-pipeline_app = _build_pipeline()
-    
+_pipeline_app = None
+
+
+def get_pipeline_app():
+    """Lazily compile the LangGraph pipeline on first call.
+
+    Callers that only need routing helpers, cost tracking, or other utilities
+    pay zero graph-compilation cost.  Only the actual forge / resume paths
+    trigger the SQLite + LangGraph build.
+    """
+    global _pipeline_app
+    if _pipeline_app is None:
+        _pipeline_app = _build_pipeline()
+    return _pipeline_app
+

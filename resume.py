@@ -14,7 +14,7 @@ load_dotenv()
 
 from langgraph.types import Command  # noqa: E402
 
-from pipeline import pipeline_app  # noqa: E402
+from pipeline import get_pipeline_app  # noqa: E402
 
 USAGE = """Usage:
   python resume.py approve [<thread-id>]
@@ -102,7 +102,7 @@ if command == "approve":
     config = {"configurable": {"thread_id": thread_id}}
     print(f"   Resuming thread: {thread_id}")
     print("✅ Approved — continuing pipeline...")
-    result = pipeline_app.invoke(Command(resume={"action": "approved"}), config)
+    result = get_pipeline_app().invoke(Command(resume={"action": "approved"}), config)
     _finalize_and_report(result)
 
 elif command == "refine":
@@ -115,7 +115,7 @@ elif command == "refine":
     config = {"configurable": {"thread_id": thread_id}}
     print(f"   Resuming thread: {thread_id}")
     print(f"🔄 Refining with feedback: {feedback}")
-    result = pipeline_app.invoke(Command(resume={"action": "rejected", "feedback": feedback}), config)
+    result = get_pipeline_app().invoke(Command(resume={"action": "rejected", "feedback": feedback}), config)
     print("\n" + "=" * 60)
     print("REFINED VISION:")
     print("=" * 60)

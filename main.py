@@ -1,16 +1,11 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from pipeline import pipeline_app
-from state import create_initial_pipeline_state
-from core.discipline.enforcer import enforce_protocol
 import sys
+from pipeline import get_pipeline_app
+from state import create_initial_pipeline_state
 
-@enforce_protocol(
-    step_number=5,
-    short_name="MainEntry",
-    description="Full pipeline launch from simple python main.py CLI (raw idea → polished vision)"
-)
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python main.py \"Your raw idea\"")
@@ -31,7 +26,7 @@ def main():
     print(f"   Thread ID: {thread_id}")
     print(f"   Idea: {raw_idea[:80]}")
 
-    result = pipeline_app.invoke(initial_state, config)
+    result = get_pipeline_app().invoke(initial_state, config)
 
     print("\n" + "="*60)
     print("POLISHED VISION:")
