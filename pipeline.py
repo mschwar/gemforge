@@ -14,8 +14,19 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 from core.llm import cost_aware_invoke, load_prompt
+from core.pipeline_stages.context_builders import (
+    build_ops_context as stage_build_ops_context,
+    build_parallel_context as stage_build_parallel_context,
+)
+from core.pipeline_stages.failure_semantics import (
+    build_deploy_result,
+    build_git_publish_result,
+    build_missing_repo_publish_result,
+    route_after_git_publish_state,
+    route_after_review_state,
+)
 from state import PipelineState
-from tools.deploy_tools import deploy_to_vercel, is_native_mobile
+from tools.deploy_tools import deploy_to_vercel
 from tools.executor_tools import run_tests
 from tools.file_tools import create_project_structure, write_file
 from tools.git_tools import push_to_github
@@ -26,15 +37,12 @@ from tools.project_tools import (
 )
 
 
-def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
+def parse_and_save_docs(response_text: str, repo_path: str) -> tuple[dict, list[Path]]:
     """Parse ===FILENAME=== blocks and write each to disk.
-
-    Uses re.findall so every block is captured, including the last one,
-    regardless of whether the response ends with a trailing delimiter.
-    Accepts .md, .txt, .yml, .yaml, .html, .json, and bare filenames with
-    a path separator so ops agents can write to subdirectories.
+    Returns (dict_of_excerpts, list_of_written_paths).
     """
     saved = {}
+    saved_paths = []
     repo_root = Path(repo_path).resolve()
     pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, response_text, re.DOTALL)
@@ -55,12 +63,16 @@ def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
 
         write_file(str(destination), content.strip())
         saved[filename] = content.strip()[:200]
+        saved_paths.append(destination)
         print(f"   → Saved {filename}")
-    return saved
+    return saved, saved_paths
 
 from tools.ingestor_tools import bundle_context
 from core.runtime.event_bus import event_bus
 from core.runtime.schema import StepEvent
+from core.memory.semantic_index import semantic_indexer
+from core.memory.retriever import semantic_retriever
+from core.repair.agentic_loop import repair_node
 import functools
 
 from langgraph.errors import GraphInterrupt
@@ -291,6 +303,14 @@ def ruthless_interrogator_node(state: PipelineState):
         "progress_log": ["✅ Canonical docs generated"],
     }
 
+def _index_files(run_id: str, project_name: str, paths: list[Path], doc_type: str = "source"):
+    """Helper to index multiple files in the semantic memory."""
+    for path in paths:
+        try:
+            semantic_indexer.index_file(run_id, project_name, path, doc_type)
+        except Exception as e:
+            print(f"   ⚠️ Semantic Indexing failed for {path.name}: {e}")
+
 @logged_node
 def bootstrapper_node(state: PipelineState):
     print("🔨 3. Bootstrapper creating REAL project...")
@@ -302,14 +322,21 @@ def bootstrapper_node(state: PipelineState):
     if audited and repo_path:
         write_file(f"{repo_path}/STAFF_AUDIT.md", audited)
         print("   → STAFF_AUDIT.md saved to repo")
+        # Index the staff audit
+        _index_files(state["run_id"], gem_name, [Path(repo_path) / "STAFF_AUDIT.md"], "audit")
 
     # Write canonical docs now that the folder exists
     raw_output = state.get("canonical_docs", {}).get("_raw_output", "")
     if raw_output:
-        saved = parse_and_save_docs(raw_output, repo_path)
+        saved, saved_paths = parse_and_save_docs(raw_output, repo_path)
         canonical_docs = saved if saved else {"INTERROGATION.md": raw_output[:200]}
         if not saved:
-            write_file(f"{repo_path}/INTERROGATION.md", raw_output)
+            p = Path(repo_path) / "INTERROGATION.md"
+            write_file(str(p), raw_output)
+            saved_paths = [p]
+        
+        # Index canonical docs
+        _index_files(state["run_id"], gem_name, saved_paths, "spec")
     else:
         canonical_docs = {}
 
@@ -326,6 +353,7 @@ def uiux_node(state: PipelineState):
     print("🔨 4. UI/UX Design Agent running...")
     prompt = load_prompt("04_uiux_design.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     context = (
         f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
         f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
@@ -334,8 +362,10 @@ def uiux_node(state: PipelineState):
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
     response = cost_aware_invoke(messages)
     if repo_path:
-        write_file(f"{repo_path}/UIUX_SPEC.md", response.content)
+        p = Path(repo_path) / "UIUX_SPEC.md"
+        write_file(str(p), response.content)
         print("   → UIUX_SPEC.md saved")
+        _index_files(state["run_id"], gem_name, [p], "spec")
     return {"progress_log": ["✅ UI/UX spec complete"]}
 
 @logged_node
@@ -343,6 +373,7 @@ def architecture_node(state: PipelineState):
     print("🔨 5. Architecture Agent running...")
     prompt = load_prompt("05_architecture.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     context = (
         f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
         f"STAFF_AUDIT:\n{state.get('audited_context', 'N/A')}\n\n"
@@ -351,8 +382,10 @@ def architecture_node(state: PipelineState):
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
     response = cost_aware_invoke(messages)
     if repo_path:
-        write_file(f"{repo_path}/ARCHITECTURE.md", response.content)
+        p = Path(repo_path) / "ARCHITECTURE.md"
+        write_file(str(p), response.content)
         print("   → ARCHITECTURE.md saved")
+        _index_files(state["run_id"], gem_name, [p], "spec")
     return {"architecture_complete": True, "progress_log": ["✅ Architecture complete"]}
 
 @logged_node
@@ -360,6 +393,7 @@ def business_strategist_node(state: PipelineState):
     print("🔨 5c. Business Strategist Agent running...")
     prompt = load_prompt("23_business_strategist.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     
     # Context includes the primary docs for business alignment
     docs = state.get("canonical_docs", {})
@@ -373,10 +407,13 @@ def business_strategist_node(state: PipelineState):
     
     if repo_path:
         # Use our standard doc parser to save BUSINESS_STRATEGY.md
-        saved = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
         if not saved:
-             write_file(f"{repo_path}/BUSINESS_STRATEGY.md", response.content)
+             p = Path(repo_path) / "BUSINESS_STRATEGY.md"
+             write_file(str(p), response.content)
+             saved_paths = [p]
         print("   → BUSINESS_STRATEGY.md saved")
+        _index_files(state["run_id"], gem_name, saved_paths, "spec")
         
     return {"business_strategy_complete": True, "progress_log": ["✅ Business strategy complete"]}
 
@@ -385,6 +422,7 @@ def landing_page_node(state: PipelineState):
     print("🔨 5d. Landing Page Agent running...")
     prompt = load_prompt("24_landing_page_generator.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     
     # Context includes the primary docs for landing page alignment
     strategy_path = f"{repo_path}/BUSINESS_STRATEGY.md"
@@ -403,10 +441,13 @@ def landing_page_node(state: PipelineState):
     
     if repo_path:
         # Use our standard doc parser to save LANDING_PAGE.html
-        saved = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
         if not saved:
-             write_file(f"{repo_path}/LANDING_PAGE.html", response.content)
+             p = Path(repo_path) / "LANDING_PAGE.html"
+             write_file(str(p), response.content)
+             saved_paths = [p]
         print("   → LANDING_PAGE.html saved")
+        _index_files(state["run_id"], gem_name, saved_paths, "spec")
         
     return {"landing_page_complete": True, "progress_log": ["✅ Landing page complete"]}
 
@@ -415,6 +456,7 @@ def platform_decision_node(state: PipelineState):
     print("🔨 5b. Platform Decision Agent running...")
     prompt = load_prompt("05b_platform_decision.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     polished_vision = state.get("polished_vision", "")
     arch_content = ""
     try:
@@ -428,8 +470,10 @@ def platform_decision_node(state: PipelineState):
     response = cost_aware_invoke(messages)
     manifest_data = parse_platform_manifest(response.content)
     if repo_path:
-        write_file(f"{repo_path}/PLATFORM_MANIFEST.md", response.content)
+        p = Path(repo_path) / "PLATFORM_MANIFEST.md"
+        write_file(str(p), response.content)
         print("   → PLATFORM_MANIFEST.md saved")
+        _index_files(state["run_id"], gem_name, [p], "spec")
     return {
         "selected_platform": manifest_data.get("selected_platform", ""),
         "selected_template": manifest_data.get("template", ""),
@@ -495,28 +539,34 @@ def code_orchestrator_node(state: PipelineState):
         prompt = load_prompt("16_ui_code_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         ui_response = cost_aware_invoke(messages)
-        generator_write_counts["ui_code_generator"] = parse_and_save_generated_code(
+        ui_paths = parse_and_save_generated_code(
             repo_path,
             ui_response.content,
         )
+        generator_write_counts["ui_code_generator"] = len(ui_paths)
+        _index_files(state["run_id"], gem_name, ui_paths, "source")
 
         # 2. Core Logic Generator
         prompt = load_prompt("17_core_logic_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         logic_response = cost_aware_invoke(messages)
-        generator_write_counts["core_logic_generator"] = parse_and_save_generated_code(
+        logic_paths = parse_and_save_generated_code(
             repo_path,
             logic_response.content,
         )
+        generator_write_counts["core_logic_generator"] = len(logic_paths)
+        _index_files(state["run_id"], gem_name, logic_paths, "source")
 
         # 3. Platform-Specific Generator
         prompt = load_prompt("18_platform_specific_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         platform_response = cost_aware_invoke(messages)
-        generator_write_counts["platform_specific_generator"] = parse_and_save_generated_code(
+        platform_paths = parse_and_save_generated_code(
             repo_path,
             platform_response.content,
         )
+        generator_write_counts["platform_specific_generator"] = len(platform_paths)
+        _index_files(state["run_id"], gem_name, platform_paths, "source")
 
         malformed_generators = [
             name for name, writes in generator_write_counts.items() if writes < min_generator_writes
@@ -564,34 +614,36 @@ def code_orchestrator_node(state: PipelineState):
 
 # ---- PARALLEL AGENTS (return only changed keys — required for parallel execution) ----
 
-def _read_spec_file(repo_path: str, filename: str) -> str:
-    """Read a generated spec file from the project directory."""
-    if not repo_path:
-        return "[not available]"
-    try:
-        with open(f"{repo_path}/{filename}", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        return f"[{filename} not yet generated]"
-
 def _build_parallel_context(state: PipelineState) -> str:
-    repo_path = state.get("repo_path", "")
-    return (
-        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
-        f"UIUX_SPEC:\n{_read_spec_file(repo_path, 'UIUX_SPEC.md')}\n\n"
-        f"ARCHITECTURE:\n{_read_spec_file(repo_path, 'ARCHITECTURE.md')}\n\n"
-        f"PLATFORM: {state.get('selected_platform', 'web')}"
-    )
+    vision = state.get("polished_vision", "")
+    
+    # RAG: Retrieve relevant past examples
+    rag_context = ""
+    try:
+        # Search for similar historical chunks
+        past_examples = semantic_retriever.search(vision, k=3)
+        if past_examples:
+            rag_context = "\n### RELEVANT PAST EXAMPLES (FOR CONTEXT):\n"
+            for i, ex in enumerate(past_examples):
+                rag_context += f"\n-- Example {i+1} (Project: {ex['metadata'].get('project_name', 'Unknown')}) --\n"
+                rag_context += ex["text"] + "\n"
+    except Exception as e:
+        print(f"   ⚠️ RAG retrieval failed: {e}")
+
+    return stage_build_parallel_context(state, extra_context=rag_context)
 
 @logged_node
 def frontend_node(state: PipelineState):
     print("🔨 7. Frontend Agent (parallel)...")
     prompt = load_prompt("06_frontend.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
-        write_file(f"{repo_path}/FRONTEND_SPEC.md", response.content)
+        p = Path(repo_path) / "FRONTEND_SPEC.md"
+        write_file(str(p), response.content)
+        _index_files(state["run_id"], gem_name, [p], "spec")
     return {"frontend_complete": True, "progress_log": ["✅ Frontend spec complete"]}
 
 @logged_node
@@ -599,10 +651,13 @@ def backend_node(state: PipelineState):
     print("🔨 8. Backend Agent (parallel)...")
     prompt = load_prompt("07_backend.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
-        write_file(f"{repo_path}/BACKEND_SPEC.md", response.content)
+        p = Path(repo_path) / "BACKEND_SPEC.md"
+        write_file(str(p), response.content)
+        _index_files(state["run_id"], gem_name, [p], "spec")
     return {"backend_complete": True, "progress_log": ["✅ Backend spec complete"]}
 
 @logged_node
@@ -610,35 +665,36 @@ def data_node(state: PipelineState):
     print("🔨 9. Data Architecture Agent (parallel)...")
     prompt = load_prompt("08_data.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     context = _build_parallel_context(state)
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
     if repo_path:
-        write_file(f"{repo_path}/DATA_SPEC.md", response.content)
+        p = Path(repo_path) / "DATA_SPEC.md"
+        write_file(str(p), response.content)
+        _index_files(state["run_id"], gem_name, [p], "spec")
     return {"data_complete": True, "progress_log": ["✅ Data spec complete"]}
 
 # ---- SEQUENTIAL CHAIN ----
 
 def _ops_context(state: PipelineState) -> str:
     """Shared context for infra/cicd/sre agents."""
-    repo_path = state.get("repo_path", "")
-    return (
-        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
-        f"PLATFORM: {state.get('selected_platform', 'web')}\n\n"
-        f"ARCHITECTURE:\n{_read_spec_file(repo_path, 'ARCHITECTURE.md')}\n\n"
-        f"DIRECTOR_REVIEW:\n{_read_spec_file(repo_path, 'DIRECTOR_REVIEW.md')}"
-    )
+    return stage_build_ops_context(state)
 
 @logged_node
 def infra_node(state: PipelineState):
     print("🔨 10. Infrastructure Agent...")
     prompt = load_prompt("10_infra.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
     if repo_path:
-        saved = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
         if not saved:
-            write_file(f"{repo_path}/INFRA.md", response.content)
+            p = Path(repo_path) / "INFRA.md"
+            write_file(str(p), response.content)
+            saved_paths = [p]
         print("   → Infrastructure spec saved")
+        _index_files(state["run_id"], gem_name, saved_paths, "spec")
     return {"infra_complete": True, "progress_log": ["✅ Infra spec complete"]}
 
 @logged_node
@@ -646,12 +702,16 @@ def cicd_node(state: PipelineState):
     print("🔨 11. CI/CD Agent...")
     prompt = load_prompt("11_cicd.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
     if repo_path:
-        saved = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
         if not saved:
-            write_file(f"{repo_path}/CICD.md", response.content)
+            p = Path(repo_path) / "CICD.md"
+            write_file(str(p), response.content)
+            saved_paths = [p]
         print("   → CI/CD spec saved")
+        _index_files(state["run_id"], gem_name, saved_paths, "spec")
     return {"cicd_complete": True, "progress_log": ["✅ CI/CD spec complete"]}
 
 @logged_node
@@ -659,12 +719,16 @@ def sre_node(state: PipelineState):
     print("🔨 12. SRE & Observability Agent...")
     prompt = load_prompt("12_sre.md")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=_ops_context(state))])
     if repo_path:
-        saved = parse_and_save_docs(response.content, repo_path)
+        saved, saved_paths = parse_and_save_docs(response.content, repo_path)
         if not saved:
-            write_file(f"{repo_path}/SRE.md", response.content)
+            p = Path(repo_path) / "SRE.md"
+            write_file(str(p), response.content)
+            saved_paths = [p]
         print("   → SRE spec saved")
+        _index_files(state["run_id"], gem_name, saved_paths, "spec")
     return {"sre_complete": True, "progress_log": ["✅ SRE spec complete"]}
 
 @logged_node
@@ -677,47 +741,35 @@ def deploy_node(state: PipelineState):
     # Passing idea text can misclassify web apps whose description mentions "iOS".
     live_url = deploy_to_vercel(repo_path, selected_platform)
 
-    if live_url:
-        print(f"\n🎉 APP IS NOW LIVE → {live_url}")
-        return {
-            "live_url": live_url,
-            "deploy_complete": True,
-            "deploy_status": "live",
-            "pipeline_status": state.get("pipeline_status", "success"),
-            "progress_log": [f"🎉 LIVE at {live_url}"],
-        }
+    result = build_deploy_result(state, repo_path, selected_platform, live_url)
+    if result.get("deploy_status") == "live":
+        print(f"\n🎉 APP IS NOW LIVE → {result.get('live_url')}")
+    elif result.get("deploy_status") == "local":
+        print(f"\n📦 Native project ready locally at: {repo_path}")
     else:
         print(f"\n📦 Project ready locally at: {repo_path}")
-        if is_native_mobile(selected_platform):
-            return {
-                "live_url": None,
-                "deploy_complete": True,
-                "deploy_status": "local",
-                "pipeline_status": state.get("pipeline_status", "success"),
-                "progress_log": [f"📦 Native project ready locally: {repo_path}"],
-            }
-
-        return {
-            "live_url": None,
-            "deploy_complete": True,
-            "deploy_status": "failed",
-            "pipeline_status": "partial",
-            "error_code": "DEPLOY_FAILED",
-            "error_stage": "deploy",
-            "operator_action": "Run `npx vercel --prod --yes` from the generated project directory.",
-            "progress_log": [f"⚠️ Deploy failed; project remains local at: {repo_path}"],
-        }
+    return result
 
 # ====================== ROUTING ======================
 
 def route_after_review(state: PipelineState) -> str:
-    if state.get("approval_status") == "approved":
-        return "ruthless_interrogator"
-    return "vision_polisher"
+    return route_after_review_state(state)
+
+
+def route_after_qa(state: PipelineState) -> str:
+    if state.get("tests_passed", False):
+        return "director"
+    
+    # Bounded repair loop
+    max_attempts = int(os.getenv("GEMFORGE_AUTO_REPAIR_MAX_ATTEMPTS", "3"))
+    if state.get("repair_count", 0) < max_attempts:
+        return "repair"
+        
+    return "director"
 
 
 def route_after_git_publish(state: PipelineState) -> str:
-    return "shipping" if state.get("git_published", False) else "end"
+    return route_after_git_publish_state(state)
 
 # ====================== GRAPH ======================
 
@@ -727,9 +779,11 @@ def qa_generator_node(state: PipelineState):
     """19_qa_generator.md — generates platform-appropriate tests"""
     print("🧪 19. QA Generator running...")
     prompt = load_prompt("19_qa_generator.md")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project at: {state['repo_path']}\nPlatform: {state['selected_platform']}\nGenerate tests now.")]
     response = cost_aware_invoke(messages)
-    parse_and_save_docs(response.content, state["repo_path"])
+    saved, saved_paths = parse_and_save_docs(response.content, state["repo_path"])
+    _index_files(state["run_id"], gem_name, saved_paths, "test")
     return {
         "tests_generated": True,
         "test_report": "Tests generated — see TESTS_SUMMARY.md",
@@ -746,6 +800,7 @@ def qa_node(state: PipelineState):
     return {
         "tests_passed": test_result["success"],
         "test_report": test_result["report"],
+        "test_details": test_result.get("details", ""),
         "progress_log": [f"🧪 QA Result: {test_result['report']} ({test_result['failures']} failures)"]
     }
 
@@ -805,38 +860,9 @@ def git_publish_node(state: PipelineState):
     """20_git_publish.md — auto GitHub repo + push + PR"""
     print("📤 21. Git Publish running...")
     if not state.get("repo_path"):
-        return {
-            "git_published": False,
-            "pipeline_status": "blocked",
-            "error_code": "REPO_PATH_MISSING",
-            "error_stage": "git_publish",
-            "operator_action": "Ensure bootstrapper produced a repo_path before publishing.",
-            "progress_log": ["❌ Git publish blocked (no repo_path available)"],
-        }
+        return build_missing_repo_publish_result()
     publish_result = push_to_github(state["repo_path"], state["raw_idea"])
-
-    if not publish_result["success"]:
-        return {
-            "git_published": False,
-            "git_repo_url": publish_result.get("repo_url", ""),
-            "pr_url": publish_result.get("pr_url", ""),
-            "pipeline_status": "blocked",
-            "error_code": publish_result.get("error_code", "GIT_PUBLISH_FAILED"),
-            "error_stage": publish_result.get("error_stage", "git_publish"),
-            "operator_action": publish_result.get(
-                "operator_action",
-                "Authenticate GitHub CLI and rerun publish.",
-            ),
-            "progress_log": [f"❌ Git publish blocked: {publish_result.get('error', 'unknown error')}"],
-        }
-
-    return {
-        "git_published": True,
-        "git_repo_url": publish_result.get("repo_url", ""),
-        "pr_url": publish_result.get("pr_url", ""),
-        "pipeline_status": state.get("pipeline_status", "success"),
-        "progress_log": [f"📤 GitHub published: {publish_result.get('repo_url', 'N/A')}"]
-    }
+    return build_git_publish_result(state, publish_result)
 
 
 @logged_node
@@ -890,6 +916,7 @@ def weaver_node(state: PipelineState):
         f"RAW_IDEA: {state.get('raw_idea')}\n"
         f"POLISHED_VISION: {state.get('polished_vision')}\n"
         f"HUMAN_FEEDBACK: {state.get('human_feedback')}\n"
+        f"REPAIR_HISTORY: {json.dumps(state.get('repair_history', []), indent=2)}\n"
         f"TEST_REPORT: {state.get('test_report')}\n"
         f"GENERATED_CODE:\n{code_context[:5000]}\n" # Limit context
     )
@@ -930,6 +957,7 @@ def _build_pipeline():
         ("data", data_node),
         ("qa_generator", qa_generator_node),
         ("qa", qa_node),
+        ("repair", repair_node),
         ("director", director_node),
         ("infra", infra_node),
         ("cicd", cicd_node),
@@ -969,7 +997,12 @@ def _build_pipeline():
     workflow.add_edge(["frontend", "backend", "data"], "qa_generator")
     workflow.add_edge("qa_generator", "qa")
 
-    workflow.add_edge("qa", "director")
+    workflow.add_conditional_edges(
+        "qa",
+        route_after_qa,
+        {"director": "director", "repair": "repair"},
+    )
+    workflow.add_edge("repair", "qa")
 
     workflow.add_conditional_edges(
         "director",

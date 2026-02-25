@@ -28,18 +28,15 @@ def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
     return candidate
 
 
-def parse_and_save_generated_code(repo_path: str, llm_response: str):
+def parse_and_save_generated_code(repo_path: str, llm_response: str) -> list[Path]:
     """
     Parse ===relative/path.ext=== code blocks and write files.
-
-    Backward-compatible behavior:
-    - bare .swift filenames are written under Sources/
-    - other bare filenames are written to repo root
+    Returns a list of Path objects that were successfully written.
     """
     pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, llm_response, re.DOTALL)
 
-    written_count = 0
+    written_paths = []
     output_root = Path(repo_path).resolve()
     for filename, content in matches:
         destination = _resolve_generated_file_path(repo_path, filename)
@@ -50,9 +47,9 @@ def parse_and_save_generated_code(repo_path: str, llm_response: str):
         write_file(str(destination), content.strip())
         relative = destination.relative_to(output_root)
         print(f"   ✅ Generated {relative}")
-        written_count += 1
+        written_paths.append(destination)
 
-    return written_count
+    return written_paths
 
 
 def build_and_verify_xcode(repo_path: str):

@@ -1,5 +1,7 @@
 import asyncio
 import json
+import sqlite3
+from pathlib import Path
 from datetime import datetime
 from typing import AsyncGenerator, Dict, List
 
@@ -10,23 +12,9 @@ from core.runtime.event_bus import event_bus
 from core.runtime.event_logger import event_logger
 
 app = FastAPI(title="GemForge Runtime API")
+_DB_PATH = Path(__file__).resolve().parent.parent.parent / "checkpoints.db"
 
-# Memory-based queue for real-time SSE dispatch
-event_queues: List[asyncio.Queue] = []
-
-def event_bus_callback(event_dict: Dict):
-    """Bridge EventBus (sync) to FastAPI SSE queues (async)."""
-    # We use the global loop to put events into the queues
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            for q in event_queues:
-                loop.call_soon_threadsafe(q.put_nowait, event_dict)
-    except Exception:
-        pass
-
-# Register the bridge
-event_bus.subscribe(event_bus_callback)
+# ... event_queues and event_bus_callback ...
 
 @app.get("/runs")
 async def list_runs(limit: int = 10):
@@ -37,6 +25,14 @@ async def list_runs(limit: int = 10):
 async def get_run_events(run_id: str):
     """Get all historical events for a run."""
     return {"events": event_logger.get_run_events(run_id)}
+
+@app.get("/runs/{run_id}/repairs")
+async def get_run_repairs(run_id: str):
+    """Get repair history for a run."""
+    with sqlite3.connect(str(_DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT * FROM repair_attempts WHERE run_id = ? ORDER BY created_at ASC", (run_id,))
+        return {"repairs": [dict(row) for row in cur.fetchall()]}
 
 @app.get("/runs/{run_id}/stream")
 async def stream_run_events(run_id: str, request: Request):

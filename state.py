@@ -47,7 +47,7 @@ class PipelineState(TypedDict):
     data_complete: bool
     qa_complete: bool
     director_approved: bool
-    director_rejection_count: int  # circuit breaker — forces green after N rejections
+    director_rejection_count: int  # tracks repeated rejections for manual intervention alerts
     infra_complete: bool
     cicd_complete: bool
     sre_complete: bool
@@ -75,6 +75,11 @@ class PipelineState(TypedDict):
     # Cost Tracking (Module 5)
     total_tokens: int
     total_cost: float
+
+    # Agentic Repair (Blueprint 02)
+    repair_count: int
+    repair_history: List[Dict[str, Any]]
+    repair_status: str | None # "succeeded", "failed", "max_attempts_reached"
 
     # === DISCIPLINE PROTOCOL INTEGRATION ===
     discipline_enforced: bool
@@ -136,7 +141,11 @@ def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = 
             # Discipline fields
             "discipline_enforced": True,
             "last_audit_timestamp": enforcer.timestamp(),
-            "protocol_version": "v1.0"
+            "protocol_version": "v1.0",
+            # Repair
+            "repair_count": 0,
+            "repair_history": [],
+            "repair_status": None
         }
         enforcer.log_audit(f"Initial PipelineState created for thread {raw_idea[:30]}...")
         return state
