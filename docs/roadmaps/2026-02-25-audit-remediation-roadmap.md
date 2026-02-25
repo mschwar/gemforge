@@ -112,6 +112,15 @@ Scope: Bound LLM context costs and enforce minimum generation integrity guarante
 ### Rollback Plan
 - Feature-flag strict generation thresholds for one release if false positives appear on edge prompts.
 
+### Status
+- Executed on 2026-02-25:
+  - Context bundling now enforces file/char/byte budgets and reports token estimates.
+  - Context file selection now prioritizes idea-relevant/high-signal files.
+  - Code orchestrator now fails hard when generator writes are below threshold and emits structured malformed-output payloads.
+- Gate evidence:
+  - `python -m pytest -q tests/test_phase3_context_generation.py` → `3 passed`
+  - `python -m pytest -q` → `16 passed`
+
 ## Phase 4: Operability and Failure Semantics
 Scope: Remove ambiguous fail-open behavior and make operator intervention points explicit.
 

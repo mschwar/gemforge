@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import json
 import os
 import re
 import sqlite3
@@ -68,7 +69,24 @@ def document_auditor_node(state: PipelineState):
         return {"audited_context": None}
 
     print(f"🔨 0. Document Auditor sifting through {path}...")
-    context_bundle = bundle_context(path)
+    context_bundle, context_stats = bundle_context(
+        path,
+        raw_idea=state.get("raw_idea", ""),
+        include_stats=True,
+    )
+    print(
+        "   → Context bundle: "
+        f"{context_stats['included_files']} files, "
+        f"{context_stats['total_chars']} chars, "
+        f"~{context_stats['estimated_tokens']} tokens"
+    )
+    if context_stats["dropped_by_budget"] or context_stats["dropped_oversized_file"]:
+        print(
+            "   ⚠️ Context budget trimming: "
+            f"dropped={context_stats['dropped_by_budget']}, "
+            f"oversized={context_stats['dropped_oversized_file']}, "
+            f"truncated={context_stats['truncated_files']}"
+        )
     
     prompt = load_prompt("28_document_auditor.md")
     user_content = f"DIRECTORY_CONTEXT:\n\n{context_bundle}\n\nRAW_IDEA: {state['raw_idea']}"
@@ -79,7 +97,20 @@ def document_auditor_node(state: PipelineState):
     print("   → Audit complete. Nucleus extracted.")
     return {
         "audited_context": response.content,
-        "progress_log": ["✅ Document Audit complete"],
+        "progress_log": [
+            "✅ Document Audit complete",
+            "📊 CONTEXT_BUDGET "
+            + json.dumps(
+                {
+                    "included_files": context_stats["included_files"],
+                    "dropped_by_budget": context_stats["dropped_by_budget"],
+                    "dropped_oversized_file": context_stats["dropped_oversized_file"],
+                    "truncated_files": context_stats["truncated_files"],
+                    "estimated_tokens": context_stats["estimated_tokens"],
+                },
+                sort_keys=True,
+            ),
+        ],
     }
 
 def vision_polisher_node(state: PipelineState):
@@ -334,24 +365,55 @@ def code_orchestrator_node(state: PipelineState):
     )
 
     if supports_llm_generators:
+        min_generator_writes = max(1, int(os.getenv("GEMFORGE_MIN_GENERATOR_WRITES", "1")))
+        generator_write_counts = {}
+
         # 1. UI Code Generator
         prompt = load_prompt("16_ui_code_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         ui_response = cost_aware_invoke(messages)
-        parse_and_save_generated_code(repo_path, ui_response.content)
+        generator_write_counts["ui_code_generator"] = parse_and_save_generated_code(
+            repo_path,
+            ui_response.content,
+        )
 
         # 2. Core Logic Generator
         prompt = load_prompt("17_core_logic_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         logic_response = cost_aware_invoke(messages)
-        parse_and_save_generated_code(repo_path, logic_response.content)
+        generator_write_counts["core_logic_generator"] = parse_and_save_generated_code(
+            repo_path,
+            logic_response.content,
+        )
 
         # 3. Platform-Specific Generator
         prompt = load_prompt("18_platform_specific_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
         platform_response = cost_aware_invoke(messages)
-        parse_and_save_generated_code(repo_path, platform_response.content)
-        progress.append("✅ LLM code generators completed")
+        generator_write_counts["platform_specific_generator"] = parse_and_save_generated_code(
+            repo_path,
+            platform_response.content,
+        )
+
+        malformed_generators = [
+            name for name, writes in generator_write_counts.items() if writes < min_generator_writes
+        ]
+        if malformed_generators:
+            error_payload = {
+                "error_code": "GENERATOR_OUTPUT_MALFORMED",
+                "min_generator_writes": min_generator_writes,
+                "generator_write_counts": generator_write_counts,
+                "malformed_generators": malformed_generators,
+            }
+            if repo_path:
+                write_file(
+                    f"{repo_path}/GENERATOR_FAILURE.json",
+                    json.dumps(error_payload, indent=2, sort_keys=True),
+                )
+            print(f"   ❌ GENERATOR_OUTPUT_MALFORMED: {json.dumps(error_payload, sort_keys=True)}")
+            raise ValueError(f"GENERATOR_OUTPUT_MALFORMED::{json.dumps(error_payload, sort_keys=True)}")
+
+        progress.append(f"✅ LLM code generators completed ({generator_write_counts})")
     else:
         progress.append("✅ Template-only code path selected (no LLM generators)")
 
