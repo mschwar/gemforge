@@ -1,5 +1,7 @@
 from typing import TypedDict, Annotated, List, Dict, Any
 import operator
+from datetime import datetime
+from core.discipline.enforcer import DisciplineEnforcer, discipline_step
 
 class PipelineState(TypedDict):
     """This is the single source of truth that travels through every agent."""
@@ -13,7 +15,7 @@ class PipelineState(TypedDict):
     human_feedback: str | None
 
     # After Ruthless Interrogator
-    canonical_docs: Dict[str, str]          # keys: MASTERBRIEF, PRD, APP_FLOW, etc.
+    canonical_docs: Dict[str, str]  # keys: MASTERBRIEF, PRD, APP_FLOW, etc.
 
     # After Bootstrapper
     repo_path: str
@@ -27,7 +29,7 @@ class PipelineState(TypedDict):
     # Current progress
     current_phase: str
     progress_log: Annotated[List[str], operator.add]  # merge-safe for parallel nodes
-    approval_status: str                    # "pending", "approved", "rejected"
+    approval_status: str  # "pending", "approved", "rejected"
 
     # Later stages
     architecture_complete: bool
@@ -43,3 +45,48 @@ class PipelineState(TypedDict):
     # Final output
     live_url: str | None
     deploy_status: str | None
+
+    # === DISCIPLINE PROTOCOL INTEGRATION ===
+    discipline_enforced: bool
+    last_audit_timestamp: str | None
+    protocol_version: str
+
+def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
+    """Disciplined factory — always used instead of manual dicts."""
+    with discipline_step(5, "StateInit", f"Create disciplined initial state for idea: {raw_idea[:60]}..."):
+        enforcer = DisciplineEnforcer()
+        state: PipelineState = {
+            "raw_idea": raw_idea,
+            "polished_vision": "",
+            "vision_approved": False,
+            "human_feedback": None,
+            "canonical_docs": {},
+            "repo_path": "",
+            "repo_created": False,
+            "selected_platform": "",
+            "selected_template": "",
+            "platform_manifest": {},
+            "current_phase": "vision",
+            "progress_log": [],
+            "approval_status": "pending",
+            "architecture_complete": False,
+            "frontend_complete": False,
+            "backend_complete": False,
+            "data_complete": False,
+            "qa_complete": False,
+            "infra_complete": False,
+            "cicd_complete": False,
+            "sre_complete": False,
+            "deploy_complete": False,
+            "live_url": None,
+            "deploy_status": None,
+            # Discipline fields
+            "discipline_enforced": True,
+            "last_audit_timestamp": enforcer.timestamp(),
+            "protocol_version": "v1.0"
+        }
+        enforcer.log_audit(f"Initial PipelineState created for thread {raw_idea[:30]}...")
+        return state
+
+if __name__ == "__main__":
+    print("PipelineState ready with DisciplineEnforcer integration")

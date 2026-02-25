@@ -4,9 +4,15 @@ load_dotenv()
 
 import sys
 from pipeline import pipeline_app
-from state import PipelineState
+from state import create_initial_pipeline_state
+from core.discipline.enforcer import enforce_protocol
 
 
+@enforce_protocol(
+    step_number=5,
+    short_name="CLIEntry",
+    description="Primary GemForge CLI launch (gemforge_cli.py new \"idea\") — full pipeline with full discipline"
+)
 def main():
     if len(sys.argv) < 3 or sys.argv[1] != "new":
         print("Usage: python gemforge_cli.py new \"Your raw idea\"")
@@ -27,32 +33,8 @@ def main():
     print(f"  Thread: {thread_id}")
     print("═"*80)
 
-    initial_state: PipelineState = {
-        "raw_idea": raw_idea,
-        "polished_vision": "",
-        "vision_approved": False,
-        "human_feedback": None,
-        "canonical_docs": {},
-        "repo_path": "",
-        "repo_created": False,
-        "selected_platform": "",
-        "selected_template": "",
-        "platform_manifest": {},
-        "current_phase": "vision",
-        "progress_log": [],
-        "approval_status": "pending",
-        "architecture_complete": False,
-        "frontend_complete": False,
-        "backend_complete": False,
-        "data_complete": False,
-        "qa_complete": False,
-        "infra_complete": False,
-        "cicd_complete": False,
-        "sre_complete": False,
-        "deploy_complete": False,
-        "live_url": None,
-        "deploy_status": None,
-    }
+    # Use disciplined factory (never manual dict again)
+    initial_state = create_initial_pipeline_state(raw_idea)
 
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -67,7 +49,7 @@ def main():
         print(polished)
 
     print("\n" + "═"*80)
-    print("  ⏸️  APPROVAL GATE — review the vision above, then run:")
+    print("  ⏸️   APPROVAL GATE — review the vision above, then run:")
     print()
     print("     python resume.py approve")
     print("     python resume.py refine \"Your feedback here\"")
@@ -75,6 +57,7 @@ def main():
 
 
 def print_final_report(result: dict):
+    """Helper — remains untouched (called later by resume/pipeline)"""
     repo_path = result.get("repo_path", "")
     live_url = result.get("live_url")
 

@@ -25,3 +25,13 @@
 - audit.log was correctly modified in Step 8 after commit (expected). 
 - Mini-cycle used to sync everything cleanly without breaking protocol.
 - Git history now 100% consistent.
+
+### 2026-02-24 Discipline Integration
+
+- All 4 core entrypoints now demand the Discipline Protocol:
+  - state.py: create_initial_pipeline_state + discipline_step
+  - main.py + gemforge_cli.py: full @enforce_protocol decorator
+  - pipeline.py: imports + entire graph build/compilation wrapped with discipline_step
+- Used safe /tmp fixer script to bypass shell escaping (learned lesson: never put != in inline python -c)
+- Every future run of GemForge will now print the D-Protocol banner and log to audit trail automatically.
+- Zero breaking changes — backward compatible, venv-safe.

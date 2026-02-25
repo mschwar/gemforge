@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
+from core.discipline.enforcer import enforce_protocol, discipline_step
+from state import create_initial_pipeline_state
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
@@ -319,60 +321,62 @@ def route_after_review(state: PipelineState) -> str:
 
 # ====================== GRAPH ======================
 
-workflow = StateGraph(PipelineState)
-
-nodes = [
-    ("vision_polisher", vision_polisher_node),
-    ("human_review", human_review_node),
-    ("ruthless_interrogator", ruthless_interrogator_node),
-    ("bootstrapper", bootstrapper_node),
-    ("uiux", uiux_node),
-    ("architecture", architecture_node),
-    ("platform_decision", platform_decision_node),
-    ("code_orchestrator", code_orchestrator_node),
-    ("frontend", frontend_node),
-    ("backend", backend_node),
-    ("data", data_node),
-    ("qa", qa_node),
-    ("infra", infra_node),
-    ("cicd", cicd_node),
-    ("sre", sre_node),
-    ("deploy", deploy_node),
-]
-for name, func in nodes:
-    workflow.add_node(name, func)
-
-workflow.set_entry_point("vision_polisher")
-workflow.add_edge("vision_polisher", "human_review")
-
-workflow.add_conditional_edges(
-    "human_review",
-    route_after_review,
-    {"ruthless_interrogator": "ruthless_interrogator", "vision_polisher": "vision_polisher"}
-)
-
-workflow.add_edge("ruthless_interrogator", "bootstrapper")
-workflow.add_edge("bootstrapper", "uiux")
-workflow.add_edge("uiux", "architecture")
-workflow.add_edge("architecture", "platform_decision")
-workflow.add_edge("platform_decision", "code_orchestrator")
-
-# Fan-out: code_orchestrator → frontend + backend + data (parallel)
-workflow.add_edge("code_orchestrator", "frontend")
-workflow.add_edge("code_orchestrator", "backend")
-workflow.add_edge("code_orchestrator", "data")
-
-# Fan-in: all three → qa
-workflow.add_edge(["frontend", "backend", "data"], "qa")
-
-workflow.add_edge("qa", "infra")
-workflow.add_edge("infra", "cicd")
-workflow.add_edge("cicd", "sre")
-workflow.add_edge("sre", "deploy")
-workflow.add_edge("deploy", END)
-
-conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
-memory = SqliteSaver(conn)
-pipeline_app = workflow.compile(checkpointer=memory)
-
-print("✅ PIPELINE v8 READY — Real Swift code generation + Xcode project + build verification!")
+with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discipline Protocol v1.0 enforced"):
+    workflow = StateGraph(PipelineState)
+    
+    nodes = [
+        ("vision_polisher", vision_polisher_node),
+        ("human_review", human_review_node),
+        ("ruthless_interrogator", ruthless_interrogator_node),
+        ("bootstrapper", bootstrapper_node),
+        ("uiux", uiux_node),
+        ("architecture", architecture_node),
+        ("platform_decision", platform_decision_node),
+        ("code_orchestrator", code_orchestrator_node),
+        ("frontend", frontend_node),
+        ("backend", backend_node),
+        ("data", data_node),
+        ("qa", qa_node),
+        ("infra", infra_node),
+        ("cicd", cicd_node),
+        ("sre", sre_node),
+        ("deploy", deploy_node),
+    ]
+    for name, func in nodes:
+        workflow.add_node(name, func)
+    
+    workflow.set_entry_point("vision_polisher")
+    workflow.add_edge("vision_polisher", "human_review")
+    
+    workflow.add_conditional_edges(
+        "human_review",
+        route_after_review,
+        {"ruthless_interrogator": "ruthless_interrogator", "vision_polisher": "vision_polisher"}
+    )
+    
+    workflow.add_edge("ruthless_interrogator", "bootstrapper")
+    workflow.add_edge("bootstrapper", "uiux")
+    workflow.add_edge("uiux", "architecture")
+    workflow.add_edge("architecture", "platform_decision")
+    workflow.add_edge("platform_decision", "code_orchestrator")
+    
+    # Fan-out: code_orchestrator → frontend + backend + data (parallel)
+    workflow.add_edge("code_orchestrator", "frontend")
+    workflow.add_edge("code_orchestrator", "backend")
+    workflow.add_edge("code_orchestrator", "data")
+    
+    # Fan-in: all three → qa
+    workflow.add_edge(["frontend", "backend", "data"], "qa")
+    
+    workflow.add_edge("qa", "infra")
+    workflow.add_edge("infra", "cicd")
+    workflow.add_edge("cicd", "sre")
+    workflow.add_edge("sre", "deploy")
+    workflow.add_edge("deploy", END)
+    
+    conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
+    memory = SqliteSaver(conn)
+    pipeline_app = workflow.compile(checkpointer=memory)
+    
+    print("✅ PIPELINE v8 READY — Real Swift code generation + Xcode project + build verification! (Discipline Protocol v1.0 ENFORCED)")
+    

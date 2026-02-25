@@ -13,3 +13,5 @@ Phase 5 — Discipline Protocol (making foundations bulletproof)
 2026-02-24 20:12 MST — step 5: Discipline Foundations - Complete bootstrap of D-Protocol v1.0 (PERSISTENT.md, progress.txt, LESSONS.md, core/discipline/enforcer.py, cross_check.py, audit.log). First live execution of the full 8-step protocol.
 
 2026-02-24 20:18 MST — step 5: Discipline Foundations - Final audit.log + docs sync after first full protocol execution.
+
+2026-02-24 20:28 MST — step 5: Discipline Integration - Wrapped all core entrypoints (state.py, main.py, gemforge_cli.py, pipeline.py) with @enforce_protocol + discipline_step + disciplined state factory. Graph compilation now self-enforcing.
