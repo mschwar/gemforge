@@ -200,6 +200,7 @@
   },
   "active": "ccb7c5e29abe52d6",
   "lastOpenFiles": [
+    "test_checkpoints.db",
     "docs/audits/2026-02-25_principal_audit/ROADMAP.md",
     "docs/audits/2026-02-25_principal_audit/REPORT.md",
     "docs/audits/2026-02-25_principal_audit/artifacts",
@@ -211,7 +212,6 @@
     "tests/test_dependency_integrity.py",
     "test_checkpoints.db-shm",
     "test_checkpoints.db-wal",
-    "test_checkpoints.db",
     "docs/architecture/PIPELINE_STAGE_MAP.md",
     "docs/roadmaps/2026-02-25-audit-remediation-roadmap.md",
     "docs/blueprints/BLUEPRINT_03_DETERMINISTIC_BUILD_GRAPH_INCREMENTAL_CACHE.md",

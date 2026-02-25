@@ -1053,6 +1053,7 @@ def weaver_node(state: PipelineState):
     print("🕸️  22. Weaver Reflector (v2.0) running...")
     from core.evolution.iterator import IterationEngine
     from core.evolution.weaver import parse_and_log_weaver_output
+    from core.swarm.swarm_factory import swarm_factory # Added
     
     prompt = load_prompt("21_weaver_reflector.md")
     gem_id = state.get("raw_idea", "Unknown")[:30]
@@ -1079,6 +1080,9 @@ def weaver_node(state: PipelineState):
     
     stats = parse_and_log_weaver_output(response.content, gem_id)
     print(f"   → Weaver complete: {stats['lessons_count']} lessons, {stats['taste_updates_count']} taste updates.")
+
+    # Cleanup temporary swarm agents (Phase 1 Audit Fix)
+    swarm_factory.cleanup_temp_agents()
 
     # Stamp final cost into PipelineState so checkpointed state is accurate.
     from tools.cost_tracker import cost_tracker

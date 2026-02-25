@@ -84,5 +84,18 @@ Execute the mission. Output all necessary file changes.
         response = cost_aware_invoke(messages)
         return response.content
 
+    def cleanup_temp_agents(self):
+        """Deletes all temporary agent prompts in the agents/temporary directory."""
+        print("🐝 Swarm Factory: Cleaning up temporary agents...")
+        count = 0
+        for item in self.temp_agents_dir.glob("specialist_*.md"):
+            try:
+                item.unlink()
+                count += 1
+            except Exception as e:
+                print(f"   ⚠️ Cleanup failed for {item}: {e}")
+        if count > 0:
+            print(f"   → Deleted {count} temporary prompt(s).")
+
 # Singleton
 swarm_factory = SwarmFactory()

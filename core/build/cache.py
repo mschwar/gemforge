@@ -19,25 +19,41 @@ class RemoteCacheProvider:
         if self.backend == "local_fs":
             Path(self.root_path).mkdir(parents=True, exist_ok=True)
 
+        self._s3_config = None
+        if self.backend == "s3":
+            try:
+                from botocore.config import Config
+                self._s3_config = Config(
+                    connect_timeout=2,
+                    read_timeout=3,
+                    retries={'max_attempts': 1}
+                )
+            except ImportError:
+                pass
+
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         if self.backend == "none":
             return None
             
         if self.backend == "local_fs":
-            cache_file = Path(self.root_path) / f"{key}.json"
-            if cache_file.exists():
-                print(f"   🌐 [REMOTE CACHE] Hit for {key[:8]} (Local FS Backend)")
-                return json.loads(cache_file.read_text())
+            try:
+                cache_file = Path(self.root_path) / f"{key}.json"
+                if cache_file.exists():
+                    print(f"   🌐 [REMOTE CACHE] Hit for {key[:8]} (Local FS Backend)")
+                    return json.loads(cache_file.read_text())
+            except Exception as e:
+                print(f"   ⚠️ [REMOTE CACHE] Local FS Read error: {e}")
         
         elif self.backend == "s3":
             try:
                 import boto3
-                s3 = boto3.client('s3')
+                s3 = boto3.client('s3', config=self._s3_config)
                 response = s3.get_object(Bucket=self.bucket, Key=f"cache/{key}.json")
                 print(f"   🌐 [REMOTE CACHE] Hit for {key[:8]} (S3 Backend)")
                 return json.loads(response['Body'].read().decode('utf-8'))
-            except Exception:
-                pass # Fail silently if remote is unreachable
+            except Exception as e:
+                # Fail silently if remote is unreachable or key missing
+                pass
         return None
 
     def set(self, key: str, value: Dict[str, Any]):
@@ -45,20 +61,23 @@ class RemoteCacheProvider:
             return
             
         if self.backend == "local_fs":
-            cache_file = Path(self.root_path) / f"{key}.json"
-            cache_file.write_text(json.dumps(value))
+            try:
+                cache_file = Path(self.root_path) / f"{key}.json"
+                cache_file.write_text(json.dumps(value))
+            except Exception as e:
+                print(f"   ⚠️ [REMOTE CACHE] Local FS Write failed: {e}")
             
         elif self.backend == "s3":
             try:
                 import boto3
-                s3 = boto3.client('s3')
+                s3 = boto3.client('s3', config=self._s3_config)
                 s3.put_object(
                     Bucket=self.bucket, 
                     Key=f"cache/{key}.json", 
                     Body=json.dumps(value).encode('utf-8')
                 )
             except Exception as e:
-                print(f"   ⚠️ [REMOTE CACHE] Upload failed: {e}")
+                print(f"   ⚠️ [REMOTE CACHE] S3 Upload failed: {e}")
 
 class BuildCache:
     def __init__(self, db_path: str = None):
