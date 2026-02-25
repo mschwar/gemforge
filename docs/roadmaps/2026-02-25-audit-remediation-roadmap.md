@@ -44,3 +44,30 @@ Scope: Lock release-critical correctness for deploy and approval gates.
 - Completed in commit `c270065132154a0125dac225be9aa153d77feca9`.
 - Residual: monitor real-world deploy logs for edge frameworks beyond current detectors.
 
+## Phase 2: Identity and State Safety
+Scope: Remove run-collision risk and make cost/state accounting consistent across approval loops.
+
+### Actions
+1. Make project directory creation collision-safe (timestamp granularity + suffix loop) (GF-002).
+2. Make `thread_id` generation collision-resistant (entropy suffix, not just idea prefix) (GF-002).
+3. Persist/refinalize cost accounting after `resume refine` path (GF-005).
+4. Add tests for path uniqueness and thread ID uniqueness semantics (GF-002, GF-005).
+
+### Gates
+- Gate P2-G1 (Filesystem Idempotency):
+  - Two same-idea runs started on the same day produce distinct project directories.
+  - Evidence: deterministic unit test with pre-created conflicting directory.
+- Gate P2-G2 (Thread Safety):
+  - Same-idea repeated invocations generate unique thread IDs unless user explicitly overrides thread.
+  - Evidence: unit test validating uniqueness and format stability.
+- Gate P2-G3 (Cost Integrity):
+  - `resume refine` updates cost persistence path with same rigor as `resume approve`.
+  - Evidence: unit/integration test asserting cost finalization side-effect.
+
+### Exit Criteria
+- All P2 gates pass with no regression in existing tests.
+- Backward compatibility note added for legacy `.thread_id` lookup.
+
+### Rollback Plan
+- Keep old thread-ID lookup as fallback candidate for one release cycle.
+- If cost persistence introduces duplicate writes, gate with idempotency token in session finalizer.
