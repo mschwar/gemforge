@@ -19,14 +19,16 @@ from tools.project_tools import (
 )
 from tools.executor_tools import run_tests
 from tools.git_tools import push_to_github
+from core.evolution.prompt_loader import prompt_loader
 import os
 import re
 
-llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0)
+llm = ChatAnthropic(model="claude-3-haiku-20240307", temperature=0)
 
 def load_prompt(filename: str) -> str:
-    with open(f"agents/{filename}", "r", encoding="utf-8") as f:
-        return f.read()
+    # Support both legacy calls and new agent_ids
+    agent_id = filename.replace(".md", "")
+    return prompt_loader.load_active_prompt(agent_id)
 
 def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
     """Parse ===FILENAME=== blocks and write each to disk."""
@@ -137,6 +139,59 @@ def architecture_node(state: PipelineState):
         print("   → ARCHITECTURE.md saved")
     return {"architecture_complete": True, "progress_log": ["✅ Architecture complete"]}
 
+def business_strategist_node(state: PipelineState):
+    print("🔨 5c. Business Strategist Agent running...")
+    prompt = load_prompt("23_business_strategist.md")
+    repo_path = state.get("repo_path", "")
+    
+    # Context includes the primary docs for business alignment
+    docs = state.get("canonical_docs", {})
+    context = (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"PRD:\n{docs.get('PRD.md', 'N/A')}\n"
+    )
+    
+    messages = [SystemMessage(content=prompt), HumanMessage(content=context)]
+    response = cost_aware_invoke(messages)
+    
+    if repo_path:
+        # Use our standard doc parser to save BUSINESS_STRATEGY.md
+        saved = parse_and_save_docs(response.content, repo_path)
+        if not saved:
+             write_file(f"{repo_path}/BUSINESS_STRATEGY.md", response.content)
+        print("   → BUSINESS_STRATEGY.md saved")
+        
+    return {"business_strategy_complete": True, "progress_log": ["✅ Business strategy complete"]}
+
+def landing_page_node(state: PipelineState):
+    print("🔨 5d. Landing Page Agent running...")
+    prompt = load_prompt("24_landing_page_generator.md")
+    repo_path = state.get("repo_path", "")
+    
+    # Context includes the primary docs for landing page alignment
+    strategy_path = f"{repo_path}/BUSINESS_STRATEGY.md"
+    strategy_content = ""
+    if os.path.exists(strategy_path):
+        with open(strategy_path, "r") as f:
+            strategy_content = f.read()
+
+    context = (
+        f"POLISHED_VISION:\n{state.get('polished_vision', '')}\n\n"
+        f"BUSINESS_STRATEGY:\n{strategy_content}\n"
+    )
+    
+    messages = [SystemMessage(content=prompt), HumanMessage(content=context)]
+    response = cost_aware_invoke(messages)
+    
+    if repo_path:
+        # Use our standard doc parser to save LANDING_PAGE.html
+        saved = parse_and_save_docs(response.content, repo_path)
+        if not saved:
+             write_file(f"{repo_path}/LANDING_PAGE.html", response.content)
+        print("   → LANDING_PAGE.html saved")
+        
+    return {"landing_page_complete": True, "progress_log": ["✅ Landing page complete"]}
+
 def platform_decision_node(state: PipelineState):
     print("🔨 5b. Platform Decision Agent running...")
     prompt = load_prompt("05b_platform_decision.md")
@@ -185,8 +240,11 @@ def code_orchestrator_node(state: PipelineState):
         manifest_data.get("template")
         or manifest_data.get("selected_platform")
         or state.get("selected_template")
-        or "ios-swiftui"
     )
+    
+    if not template_hint:
+        raise ValueError("CRITICAL: Platform Decision Agent failed to produce a valid template selection.")
+
     template_result = apply_template(repo_path, template_hint)
     template_metadata = template_result.get("metadata", {})
     selected_platform = template_result.get("platform", template_hint)
@@ -361,12 +419,68 @@ def git_publish_node(state: PipelineState):
     }
 
 
+def shipping_node(state: PipelineState):
+    """26_shipping_manifest_agent.md — auto-generates launch metadata and checklists"""
+    print("🚀 23. Shipping Manifest (v2.0) running...")
+    from core.shipping.shipper import shipper as launch_shipper
+    
+    repo_path = state.get("repo_path")
+    if not repo_path:
+        return {"shipping_complete": False, "progress_log": ["⚠️ Shipping skipped (no repo)"]}
+        
+    vision = state.get("polished_vision", "")
+    platform = state.get("selected_platform", "Web")
+    
+    # Try to load strategy
+    strategy_path = Path(repo_path) / "BUSINESS_STRATEGY.md"
+    strategy = ""
+    if os.path.exists(strategy_path):
+        with open(strategy_path, "r") as f:
+            strategy = f.read()
+            
+    launch_shipper.prepare_launch_manifest(repo_path, vision, strategy, platform)
+    
+    return {
+        "shipping_complete": True,
+        "progress_log": ["🚀 Launchpad: SHIPPING_MANIFEST.md ready"]
+    }
+
+
+# ====================== WEAVER REFLECTION NODE (v2.0 Pillar 1+8) ======================
+def weaver_node(state: PipelineState):
+    """21_weaver_reflector.md — extracts lessons & updates user taste"""
+    print("🕸️  22. Weaver Reflector (v2.0) running...")
+    from core.evolution.weaver import parse_and_log_weaver_output
+    
+    prompt = load_prompt("21_weaver_reflector.md")
+    gem_id = state.get("raw_idea", "Unknown")[:30]
+    
+    # Collect context for the Weaver
+    context = (
+        f"RAW_IDEA: {state.get('raw_idea')}\n"
+        f"POLISHED_VISION: {state.get('polished_vision')}\n"
+        f"HUMAN_FEEDBACK: {state.get('human_feedback')}\n"
+        f"TEST_REPORT: {state.get('test_report')}\n"
+        f"REPO_PATH: {state.get('repo_path')}\n"
+    )
+    
+    messages = [SystemMessage(content=prompt), HumanMessage(content=f"Analyze this gem history:\n\n{context}")]
+    response = cost_aware_invoke(messages)
+    
+    stats = parse_and_log_weaver_output(response.content, gem_id)
+    print(f"   → Weaver complete: {stats['lessons_count']} lessons, {stats['taste_updates_count']} taste updates.")
+    
+    return {
+        "progress_log": [f"🕸️ Weaver Reflector: {stats['lessons_count']} lessons captured"]
+    }
+
+
 # ====================== COST-AWARE LLM WRAPPER (Module 5) ======================
 from tools.cost_tracker import cost_tracker
 
 def cost_aware_invoke(prompt_messages):
     """Every LLM call now tracked automatically."""
-    response = cost_aware_invoke(prompt_messages)
+    response = llm.invoke(prompt_messages)
     cost_tracker.track_call(response)
     return response
 
@@ -380,6 +494,8 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
         ("bootstrapper", bootstrapper_node),
         ("uiux", uiux_node),
         ("architecture", architecture_node),
+        ("business_strategist", business_strategist_node),
+        ("landing_page", landing_page_node),
         ("platform_decision", platform_decision_node),
         ("code_orchestrator", code_orchestrator_node),
         ("frontend", frontend_node),
@@ -392,6 +508,8 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
         ("sre", sre_node),
         ("deploy", deploy_node),
     ("git_publish", git_publish_node),
+    ("shipping", shipping_node),
+    ("weaver", weaver_node),
     ]
     for name, func in nodes:
         workflow.add_node(name, func)
@@ -408,7 +526,9 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge("ruthless_interrogator", "bootstrapper")
     workflow.add_edge("bootstrapper", "uiux")
     workflow.add_edge("uiux", "architecture")
-    workflow.add_edge("architecture", "platform_decision")
+    workflow.add_edge("architecture", "business_strategist")
+    workflow.add_edge("business_strategist", "landing_page")
+    workflow.add_edge("landing_page", "platform_decision")
     workflow.add_edge("platform_decision", "code_orchestrator")
     
     # Fan-out: code_orchestrator → frontend + backend + data (parallel)
@@ -429,7 +549,9 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge("cicd", "sre")
     workflow.add_edge("sre", "deploy")
     workflow.add_edge("deploy", "git_publish")
-    workflow.add_edge("git_publish", END)
+    workflow.add_edge("git_publish", "shipping")
+    workflow.add_edge("shipping", "weaver")
+    workflow.add_edge("weaver", END)
     
     conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
     memory = SqliteSaver(conn)

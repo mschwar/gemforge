@@ -1,0 +1,8 @@
+{
+  "template_name": "python-cli",
+  "platform": "python",
+  "description": "A minimalist Python CLI tool template.",
+  "required_files": ["main.py", "requirements.txt"],
+  "supports_llm_generators": true,
+  "aliases": ["python", "cli", "python-script"]
+}

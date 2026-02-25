@@ -11,3 +11,7 @@ projects/
 
 # Safety backups (never commit)
 *.bak.*
+
+# Packaging artifacts
+*.egg-info/
+__pycache__/

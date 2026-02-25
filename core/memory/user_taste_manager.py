@@ -12,10 +12,15 @@ class UserTasteManager:
 
     def _init_default(self):
         default = {
-            "core_values": ["clean minimal code", "maximum user delight", "fast iteration", "no bloat", "Apple-first where possible", "rock-solid foundations"],
-            "ui_ux_style": "clean, performant, delightful, SwiftUI/React-native feel",
-            "tech_preferences": {"mobile": "Xcode/SwiftUI", "web": "React + TypeScript + Tailwind", "backend": "lightweight"},
-            "avoid": ["over-engineering", "complex state without reason", "heavy dependencies", "poor git hygiene"],
+            "core_values": ["clean minimal code", "maximum user delight", "fast iteration", "no bloat", "rock-solid foundations"],
+            "ui_ux_style": "Apple-style aesthetics (high whitespace, bold typography, smooth transitions) applied to ANY platform.",
+            "tech_preferences": {
+                "mobile": "Strictly follow request (SwiftUI, Flutter, or RN)",
+                "web": "React + TypeScript + Tailwind",
+                "backend": "lightweight",
+                "cli": "Python + Rich"
+            },
+            "avoid": ["over-engineering", "ignoring explicit platform requests", "complex state without reason", "poor git hygiene"],
             "feedback_history": [],
             "last_updated": datetime.now().isoformat()
         }
@@ -38,9 +43,7 @@ class UserTasteManager:
         for k, v in self.data.items():
             if k not in ["feedback_history"]:
                 lines.append(f"{k.upper()}: {v}")
-        lines.append("
-Recent feedback (highest weight first):")
+        lines.append("\nRecent feedback (highest weight first):")
         for entry in sorted(self.data["feedback_history"], key=lambda x: x["weight"], reverse=True)[:max_entries]:
             lines.append(f"[{entry['category']}] {entry['feedback']}")
-        return "
-".join(lines)
+        return "\n".join(lines)

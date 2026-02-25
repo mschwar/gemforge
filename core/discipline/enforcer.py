@@ -15,8 +15,8 @@ from functools import wraps
 class DisciplineEnforcer:
     """Central enforcer for the 8-step Discipline Protocol."""
 
-    FACTORY_ROOT = Path("/Users/mschwar/documents/github/gemforge")
-    PROJECTS_ROOT = FACTORY_ROOT.parent / "gemforge-projects"
+    FACTORY_ROOT = Path(__file__).resolve().parent.parent.parent
+    PROJECTS_ROOT = Path(os.getenv("PROJECTS_ROOT", str(FACTORY_ROOT.parent / "gemforge-projects")))
     AUDIT_LOG = FACTORY_ROOT / "audit.log"
 
     @staticmethod

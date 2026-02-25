@@ -1,0 +1,24 @@
+{
+  "core_values": [
+    "clean minimal code",
+    "maximum user delight",
+    "fast iteration",
+    "no bloat",
+    "rock-solid foundations"
+  ],
+  "ui_ux_style": "Apple-style aesthetics (high whitespace, bold typography, smooth transitions) applied to ANY platform.",
+  "tech_preferences": {
+    "mobile": "Strictly follow request (SwiftUI, Flutter, or RN)",
+    "web": "React + TypeScript + Tailwind",
+    "backend": "lightweight",
+    "cli": "Python + Rich"
+  },
+  "avoid": [
+    "over-engineering",
+    "ignoring explicit platform requests",
+    "complex state without reason",
+    "poor git hygiene"
+  ],
+  "feedback_history": [],
+  "last_updated": "2026-02-24T21:22:24.647113"
+}

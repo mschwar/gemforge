@@ -42,16 +42,10 @@ class LessonsManager:
     def _append_to_lessons_md(self, gem_id, ts, category, lesson, impact):
         md_path = Path("LESSONS.md")
         if not md_path.exists():
-            md_path.write_text("# GemForge LESSONS.md
-
-")
+            md_path.write_text("# GemForge LESSONS.md\n\n")
         with open(md_path, "a") as f:
-            f.write(f"
-## {ts} – {gem_id} [{category.upper()}] Impact:{impact}/10
-")
-            f.write(f"{lesson}
-
-")
+            f.write(f"\n## {ts} – {gem_id} [{category.upper()}] Impact:{impact}/10\n")
+            f.write(f"{lesson}\n\n")
 
     def get_recent_lessons(self, limit: int = 50, min_impact: int = 0):
         cur = self.conn.execute(

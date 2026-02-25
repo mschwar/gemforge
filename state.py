@@ -33,6 +33,8 @@ class PipelineState(TypedDict):
 
     # Later stages
     architecture_complete: bool
+    business_strategy_complete: bool
+    landing_page_complete: bool
     frontend_complete: bool
     backend_complete: bool
     data_complete: bool
@@ -45,6 +47,7 @@ class PipelineState(TypedDict):
     # Final output
     live_url: str | None
     deploy_status: str | None
+    shipping_complete: bool
 
     # QA / Testing Layer (Module 2)
     tests_generated: bool
@@ -84,6 +87,8 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "progress_log": [],
             "approval_status": "pending",
             "architecture_complete": False,
+            "business_strategy_complete": False,
+            "landing_page_complete": False,
             "frontend_complete": False,
             "backend_complete": False,
             "data_complete": False,
@@ -94,6 +99,7 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "deploy_complete": False,
             "live_url": None,
             "deploy_status": None,
+            "shipping_complete": False,
             "tests_generated": False,
             "tests_passed": False,
             "test_report": "",
