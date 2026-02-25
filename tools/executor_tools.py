@@ -50,6 +50,39 @@ def parse_and_save_generated_code(sandbox: ProjectSandbox, llm_response: str) ->
     return written_paths
 
 
+def _get_ios_destination() -> str:
+    """Dynamically finds an available iOS simulator destination."""
+    import json
+    import subprocess
+    try:
+        # Try to find a booted simulator first
+        sims_proc = subprocess.run(
+            ["xcrun", "simctl", "list", "devices", "available", "--json"],
+            capture_output=True, text=True
+        )
+        if sims_proc.returncode == 0:
+            data = json.loads(sims_proc.stdout)
+            # Flatten devices and find the first suitable one
+            for runtime, devices in data.get("devices", {}).items():
+                if "iOS" not in runtime:
+                    continue
+                for dev in devices:
+                    if dev.get("state") == "Booted":
+                        return f"id={dev['udid']}"
+            
+            # If none booted, find any available iOS device
+            for runtime, devices in data.get("devices", {}).items():
+                if "iOS" not in runtime:
+                    continue
+                if devices:
+                    return f"id={devices[0]['udid']}"
+    except Exception:
+        pass
+    
+    # Fallback to a generic but common target if discovery fails
+    return "platform=iOS Simulator,name=iPhone 15"
+
+
 def build_and_verify_xcode(repo_path: str):
     """Runs xcodegen + build verification"""
     try:
@@ -64,20 +97,21 @@ def build_and_verify_xcode(repo_path: str):
 
         xcodeproj = xcodeproj_matches[0]
         scheme = Path(xcodeproj).stem  # scheme name matches project name
+        destination = _get_ios_destination()
 
         result = subprocess.run([
             "xcodebuild", "build",
             "-project", xcodeproj,
             "-scheme", scheme,
-            "-destination", "platform=iOS Simulator,name=iPhone 16",
+            "-destination", destination,
             "CODE_SIGNING_ALLOWED=NO",
         ], capture_output=True, text=True, cwd=repo_path)
 
         if result.returncode == 0:
-            print("✅ Xcode project BUILDS SUCCESSFULLY")
+            print(f"✅ Xcode project BUILDS SUCCESSFULLY ({destination})")
             return True
         else:
-            print("⚠️ Build failed:")
+            print(f"⚠️ Build failed on {destination}:")
             # Print last 40 lines of stderr for diagnostics
             stderr_lines = result.stderr.strip().splitlines()
             for line in stderr_lines[-40:]:
@@ -127,10 +161,12 @@ def run_tests(repo_path: str, platform: str) -> dict:
                 result["report"] = "No .xcodeproj found"
                 return result
             scheme = xcodeprojs[0].stem
+            destination = _get_ios_destination()
+            
             cmd = [
                 "xcodebuild", "test",
                 "-scheme", scheme,
-                "-destination", "platform=iOS Simulator,name=iPhone 16", # Use standard name
+                "-destination", destination,
                 "-quiet"
             ]
             result["command"] = " ".join(cmd)
@@ -138,7 +174,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
             output = proc.stdout + "\n" + proc.stderr
             result["details"] = output[-4000:]  # last 4k chars
             result["success"] = proc.returncode == 0
-            result["report"] = "XCTest " + ("PASSED ✓" if result["success"] else "FAILED ✗")
+            result["report"] = f"XCTest ({destination}) " + ("PASSED ✓" if result["success"] else "FAILED ✗")
             result["failures"] = output.count("failed") or (0 if result["success"] else 1)
 
         elif "web" in platform.lower() or "react" in platform.lower() or "next" in platform.lower():

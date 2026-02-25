@@ -333,6 +333,63 @@ def cmd_build_status(args):
     print(f"{'═' * 60}\n")
 
 
+def cmd_doctor(args):
+    import subprocess
+    import platform
+
+    print(f"\n{'═' * 60}")
+    print("  🩺  GemForge Doctor — Environmental Health Check")
+    print(f"{'═' * 60}")
+
+    # 1. API Key
+    if os.getenv("ANTHROPIC_API_KEY"):
+        print("  ✅ ANTHROPIC_API_KEY is set.")
+    else:
+        print("  ❌ ANTHROPIC_API_KEY is missing.")
+
+    # 2. Python version
+    py_ver = platform.python_version()
+    if sys.version_info >= (3, 12):
+        print(f"  ✅ Python version: {py_ver}")
+    else:
+        print(f"  ❌ Python version: {py_ver} (GemForge requires 3.12+)")
+
+    # 3. Git
+    try:
+        git_ver = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout.strip()
+        print(f"  ✅ {git_ver}")
+    except Exception:
+        print("  ❌ git is not installed.")
+
+    # 4. Node / NPM
+    try:
+        node_ver = subprocess.run(["node", "--version"], capture_output=True, text=True).stdout.strip()
+        print(f"  ✅ Node: {node_ver}")
+        npm_ver = subprocess.run(["npm", "--version"], capture_output=True, text=True).stdout.strip()
+        print(f"  ✅ NPM:  v{npm_ver}")
+    except Exception:
+        print("  ❌ Node.js / NPM is not installed.")
+
+    # 5. Apple/iOS specific (if on Darwin)
+    if platform.system() == "Darwin":
+        try:
+            xc_ver = subprocess.run(["xcodebuild", "-version"], capture_output=True, text=True).stdout.strip().splitlines()[0]
+            print(f"  ✅ {xc_ver}")
+        except Exception:
+            print("  ⚠️ xcodebuild not found (iOS development will be unavailable).")
+
+        try:
+            xcg_path = subprocess.run(["which", "xcodegen"], capture_output=True, text=True).stdout.strip()
+            if xcg_path:
+                print("  ✅ xcodegen is installed.")
+            else:
+                print("  ❌ xcodegen is missing. (Install with: brew install xcodegen)")
+        except Exception:
+            print("  ❌ xcodegen check failed.")
+
+    print(f"{'═' * 60}\n")
+
+
 # ---------------------------------------------------------------------------
 # Argparse entry point
 # ---------------------------------------------------------------------------
@@ -403,6 +460,9 @@ def main():
     build_taint_parser.add_argument("node_id", help="The node ID to taint")
     build_taint_parser.add_argument("--reason", default="manual_taint", help="Reason for tainting")
 
+    # gemforge doctor
+    subparsers.add_parser("doctor", help="Check system prerequisites and environment")
+
     args = parser.parse_args()
 
     if args.command == "new":
@@ -430,6 +490,8 @@ def main():
         else:
             build_parser.print_help()
             sys.exit(1)
+    elif args.command == "doctor":
+        cmd_doctor(args)
     else:
         parser.print_help()
         sys.exit(1)
