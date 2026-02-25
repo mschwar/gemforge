@@ -43,3 +43,10 @@
 ### 2026-02-24 Integration Cycle Closure
 - Final audit.log sync performed to keep git 100% clean.
 - Protocol now lives inside the runtime — every future `gemforge new` or `main.py` run will print the D-Protocol banner and log to audit trail automatically.
+
+### 2026-02-24 Real QA / Testing Layer (Module 2)
+
+- Successfully added platform-aware test generation (XCTest for iOS, Jest for web, fallback for others) and execution.
+- Conditional routing: tests fail > 0 → human_review gate (user can refine or approve).
+- Repair lessons: Always restore from clean backup before complex edits; use dedicated /tmp Python scripts for all multi-line changes to avoid shell escaping.
+- QA will now run on every generated project (including the 5 existing ones in ../gemforge-projects/).

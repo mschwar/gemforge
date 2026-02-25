@@ -46,6 +46,11 @@ class PipelineState(TypedDict):
     live_url: str | None
     deploy_status: str | None
 
+    # QA / Testing Layer (Module 2)
+    tests_generated: bool
+    tests_passed: bool
+    test_report: str
+
     # === DISCIPLINE PROTOCOL INTEGRATION ===
     discipline_enforced: bool
     last_audit_timestamp: str | None
@@ -80,6 +85,9 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "deploy_complete": False,
             "live_url": None,
             "deploy_status": None,
+            "tests_generated": False,
+            "tests_passed": False,
+            "test_report": "",
             # Discipline fields
             "discipline_enforced": True,
             "last_audit_timestamp": enforcer.timestamp(),

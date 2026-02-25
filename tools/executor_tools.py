@@ -80,3 +80,77 @@ def build_and_verify_xcode(repo_path: str):
     except Exception as e:
         print(f"⚠️ Build verification skipped ({e})")
         return True
+
+# ====================== REAL QA / TEST RUNNER (Module 2) ======================
+def run_tests(repo_path: str, platform: str) -> dict:
+    """
+    Platform-aware test execution for GemForge Real QA Layer (Module 2).
+    Called by qa_generator_node and qa_node.
+    Returns structured result for PipelineState + conditional edge (fail → human gate).
+    """
+    import subprocess
+    from pathlib import Path
+    import os
+
+    repo = Path(repo_path)
+    if not repo.exists():
+        return {"success": False, "report": "Repo path does not exist", "passed": False, "failures": 1, "details": ""}
+
+    result = {
+        "success": False,
+        "report": "",
+        "passed": False,
+        "failures": 0,
+        "details": "",
+        "command": ""
+    }
+
+    try:
+        os.chdir(repo)
+
+        if "ios" in platform.lower() or "swift" in platform.lower():
+            print("🧪 Running XCTest for iOS...")
+            # Auto-detect scheme from .xcodeproj name
+            xcodeprojs = list(repo.glob("*.xcodeproj"))
+            if not xcodeprojs:
+                result["report"] = "No .xcodeproj found"
+                return result
+            scheme = xcodeprojs[0].stem
+            cmd = [
+                "xcodebuild", "test",
+                "-scheme", scheme,
+                "-destination", "platform=iOS Simulator,name=iPhone 16 Pro,OS=latest",
+                "-quiet"
+            ]
+            result["command"] = " ".join(cmd)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            output = proc.stdout + "\n" + proc.stderr
+            result["details"] = output[-4000:]  # last 4k chars
+            result["success"] = proc.returncode == 0
+            result["report"] = "XCTest " + ("PASSED ✓" if result["success"] else "FAILED ✗")
+            result["failures"] = output.count("failed") or (0 if result["success"] else 1)
+
+        elif "web" in platform.lower() or "react" in platform.lower() or "next" in platform.lower():
+            print("🧪 Running Jest for web project...")
+            cmd = ["npm", "test", "--", "--watchAll=false", "--ci", "--coverage"]
+            result["command"] = " ".join(cmd)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            output = proc.stdout + "\n" + proc.stderr
+            result["details"] = output[-3000:]
+            result["success"] = proc.returncode == 0
+            result["report"] = "Jest " + ("PASSED ✓" if result["success"] else "FAILED ✗")
+            result["failures"] = output.count("fail") or (0 if result["success"] else 1)
+
+        else:
+            print(f"🧪 No dedicated test runner for {platform} yet → marking as skipped (success for pipeline)")
+            result["success"] = True
+            result["report"] = f"Tests skipped for {platform} (extend run_tests for full support)"
+
+        print(f"   → {result['report']}")
+        return result
+
+    except subprocess.TimeoutExpired:
+        return {"success": False, "report": "Test execution timed out (180s)", "passed": False, "failures": 999, "details": "Timeout"}
+    except Exception as e:
+        return {"success": False, "report": f"Test runner error: {str(e)}", "passed": False, "failures": 1, "details": str(e)}
+

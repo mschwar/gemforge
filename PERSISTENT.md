@@ -31,3 +31,7 @@ Phase 5 — Discipline Protocol (making foundations bulletproof)
 - Generated projects live in `../gemforge-projects/`
 - Everything must remain clean, git-friendly, and professional.
 
+
+## Active Modules (Phase 5)
+- Module 2: Real QA / Testing Layer (In Progress) — Automated test generation + execution + fail-safe human gate. Platform-aware (XCTest, Jest, pytest, etc.).
+

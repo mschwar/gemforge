@@ -17,6 +17,7 @@ from tools.project_tools import (
     generate_xcode_project,
     parse_platform_manifest,
 )
+from tools.executor_tools import run_tests
 import os
 import re
 
@@ -266,10 +267,6 @@ def data_node(state: PipelineState):
 
 # ---- SEQUENTIAL CHAIN ----
 
-def qa_node(state: PipelineState):
-    print("🔨 9. QA & Testing Agent...")
-    return {"qa_complete": True, "progress_log": ["✅ QA complete"]}
-
 def infra_node(state: PipelineState):
     print("🔨 10. Infrastructure Agent...")
     return {"infra_complete": True, "progress_log": ["✅ Infra complete"]}
@@ -321,6 +318,32 @@ def route_after_review(state: PipelineState) -> str:
 
 # ====================== GRAPH ======================
 
+# ====================== QA / TESTING NODES (Module 2 — Real QA Layer) ======================
+def qa_generator_node(state: PipelineState):
+    """19_qa_generator.md — generates platform-appropriate tests"""
+    print("🧪 19. QA Generator running...")
+    prompt = load_prompt("19_qa_generator.md")
+    messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project at: {state['repo_path']}\nPlatform: {state['selected_platform']}\nGenerate tests now.")]
+    response = llm.invoke(messages)
+    saved = parse_and_save_docs(response.content, state["repo_path"])
+    return {
+        "tests_generated": True,
+        "test_report": "Tests generated — see TESTS_SUMMARY.md",
+        "progress_log": [f"🧪 Generated tests for {state['selected_platform']}"]
+    }
+
+def qa_node(state: PipelineState):
+    """Executes the tests via run_tests and decides pass/fail"""
+    print("🧪 20. QA Executor running...")
+    if not state.get("repo_path"):
+        return {"tests_passed": False, "test_report": "No repo_path — skipping tests", "progress_log": ["⚠️ QA skipped (no repo)"]}
+    test_result = run_tests(state["repo_path"], state["selected_platform"])
+    return {
+        "tests_passed": test_result["success"],
+        "test_report": test_result["report"],
+        "progress_log": [f"🧪 QA Result: {test_result['report']} ({test_result['failures']} failures)"]
+    }
+
 with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discipline Protocol v1.0 enforced"):
     workflow = StateGraph(PipelineState)
     
@@ -336,7 +359,8 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
         ("frontend", frontend_node),
         ("backend", backend_node),
         ("data", data_node),
-        ("qa", qa_node),
+        ("qa_generator", qa_generator_node),
+    ("qa", qa_node),
         ("infra", infra_node),
         ("cicd", cicd_node),
         ("sre", sre_node),
@@ -366,9 +390,14 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge("code_orchestrator", "data")
     
     # Fan-in: all three → qa
-    workflow.add_edge(["frontend", "backend", "data"], "qa")
+    workflow.add_edge(["frontend", "backend", "data"], "qa_generator")
+    workflow.add_edge("qa_generator", "qa")
     
-    workflow.add_edge("qa", "infra")
+    workflow.add_conditional_edges(
+        "qa",
+        lambda s: "human_review" if not s.get("tests_passed", True) else "infra",
+        {"human_review": "human_review", "infra": "infra"}
+    )
     workflow.add_edge("infra", "cicd")
     workflow.add_edge("cicd", "sre")
     workflow.add_edge("sre", "deploy")
