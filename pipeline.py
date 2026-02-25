@@ -148,12 +148,14 @@ def logged_node(node_func):
     """
     @functools.wraps(node_func)
     def wrapper(state: PipelineState, *args, **kwargs):
-        from core.llm import node_usage_stats
+        from core.llm import node_usage_stats, current_node_id
         run_id = state.get("run_id", "unknown-run")
         step_id = node_func.__name__.replace("_node", "")
         
         # Initialize node-scoped usage tracking (Phase 3)
         usage_token = node_usage_stats.set({"tokens": 0, "cost": 0.0})
+        # Set node context for Semantic Immune System (Horizon 2)
+        node_id_token = current_node_id.set(step_id)
 
         # 0. Cache Check (Phase 1)
         input_hash = _calculate_input_hash(state, step_id)
@@ -310,7 +312,9 @@ def logged_node(node_func):
             raise e
         finally:
             node_usage_stats.reset(usage_token)
+            current_node_id.reset(node_id_token)
     return wrapper
+
 
 
 # ====================== NODES ======================
