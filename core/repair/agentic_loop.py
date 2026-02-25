@@ -13,6 +13,7 @@ from core.memory.retriever import semantic_retriever
 from core.repair.signature import build_failure_signature
 from core.build.hasher import calculate_string_hash
 from core.runtime.sandbox import ProjectSandbox
+from core.runtime.errors import handle_io_error
 from tools.executor_tools import parse_and_save_generated_code, run_tests
 from core.runtime.logging import logger
 from tools.file_tools import write_file
@@ -85,9 +86,10 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
             content = sandbox.safe_read(failing_path_str)
             if content:
                 failing_file_content = f"\n### FAILING FILE CONTENT ({failing_path_str}):\n{_truncate_content(content, 4000)}"
-        except PermissionError: pass
+        except PermissionError as e:
+            handle_io_error(state, e, "repair (read failing file)", critical=False)
 
-    user_content = (
+    base_user_content = (
         f"PROJECT_PATH: {repo_path}\n"
         f"PLATFORM: {platform}\n"
         f"FAILURE_REPORT:\n{test_report}\n"
@@ -99,21 +101,56 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "\n\nPlease provide a patch to fix this failure."
     )
     
-    messages = [SystemMessage(content=prompt), HumanMessage(content=user_content)]
+    messages = [SystemMessage(content=prompt), HumanMessage(content=base_user_content)]
     logger.info(f"Surgeon is thinking (Strategy: {strategy})...", extra={"run_id": run_id, "strategy": strategy})
     response = cost_aware_invoke(messages)
     
-    # 4b. Novelty Check (Fix 3)
+    # 4b. Novelty Check (Fix 3 + Remediation F04)
     patch_content = response.content.strip()
     patch_hash = calculate_string_hash(patch_content)
     history = state.get("repair_history", [])
     
+    stall_count = 0
+    while any(h.get("patch_hash") == patch_hash for h in history) and stall_count < 2:
+        stall_count += 1
+        logger.warning(f"Repair novelty check failed (attempt {stall_count}/2). Forcing strategy shift.", extra={"run_id": run_id})
+        
+        # INCREASE DIVERSIFICATION: Switch to a stronger model and more context
+        stronger_model = os.getenv("GEMFORGE_REPAIR_DIVERSIFICATION_MODEL", "claude-3-5-sonnet-20240620")
+        increased_k = 5 + (stall_count * 2)
+        
+        # Re-fetch RAG with more context
+        extra_rag = ""
+        try:
+            from core.memory.retriever import semantic_retriever
+            hits = semantic_retriever.search(signature, k=increased_k)
+            if hits:
+                extra_rag = "\n\n### ADDITIONAL ANALOGOUS EXAMPLES (DEEPER SEARCH):\n"
+                for h in hits:
+                    extra_rag += f"- {h['text']}\n"
+        except Exception: pass
+
+        diversification_prompt = (
+            "\n\n⚠️ EMERGENCY DIVERSIFICATION REQUIRED ⚠️\n"
+            "You just proposed a patch that is IDENTICAL to a previous attempt. "
+            "That patch DID NOT fix the issue. You MUST change your strategy completely. "
+            "Think step-by-step. Check for missing configuration files, environment variables, "
+            "or subtle logic errors. DO NOT repeat the previous patch."
+            f"{extra_rag}"
+        )
+        
+        # Re-invoke with added urgency and stronger model
+        messages.append(HumanMessage(content=diversification_prompt))
+        response = cost_aware_invoke(messages, model_name=stronger_model)
+        patch_content = response.content.strip()
+        patch_hash = calculate_string_hash(patch_content)
+
     if any(h.get("patch_hash") == patch_hash for h in history):
-        logger.warning(f"Repair novelty check failed for run {run_id}: identical patch proposed.", extra={"run_id": run_id})
+        logger.error(f"Repair novelty check failed after diversification for run {run_id}.", extra={"run_id": run_id})
         return {
             "tests_passed": False,
-            "repair_status": "stalled_identical_patch",
-            "progress_log": ["❌ Agentic Repair stalled: Surgeon proposed identical patch"]
+            "repair_status": "stalled_diversity_exhausted",
+            "progress_log": ["❌ Agentic Repair stalled: Diversity exhausted (identical patches)"]
         }
 
     # 5. Apply Patch (with safety cap check)
@@ -169,7 +206,8 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
     
     try:
         sandbox.safe_write(f"REPAIR_REPORT_A{repair_count}.md", report_md)
-    except PermissionError: pass
+    except PermissionError as e:
+        handle_io_error(state, e, f"repair report (attempt {repair_count})", critical=False)
 
     # Index successful repairs
     if status == "succeeded" and written_paths:

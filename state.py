@@ -3,6 +3,12 @@ import operator
 from datetime import datetime
 from core.discipline.enforcer import DisciplineEnforcer, discipline_step
 
+def merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+    """Reducer to merge dictionaries instead of overwriting."""
+    new_dict = left.copy()
+    new_dict.update(right)
+    return new_dict
+
 class PipelineState(TypedDict):
     """This is the single source of truth that travels through every agent."""
 
@@ -22,7 +28,7 @@ class PipelineState(TypedDict):
     human_feedback: str | None
 
     # After Ruthless Interrogator
-    canonical_docs: Dict[str, str]  # keys: MASTERBRIEF, PRD, APP_FLOW, etc.
+    canonical_docs: Annotated[Dict[str, str], merge_dicts]  # merge-safe
 
     # After Bootstrapper
     repo_path: str
@@ -82,7 +88,7 @@ class PipelineState(TypedDict):
 
     # Agentic Repair (Blueprint 02)
     repair_count: int
-    repair_history: List[Dict[str, Any]]
+    repair_history: Annotated[List[Dict[str, Any]], operator.add] # merge-safe
     repair_status: str | None # "succeeded", "failed", "max_attempts_reached"
 
     # === DISCIPLINE PROTOCOL INTEGRATION ===

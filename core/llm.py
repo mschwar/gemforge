@@ -30,10 +30,15 @@ _llm: ChatAnthropic | None = None
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
 
 
-def get_llm() -> ChatAnthropic:
+def get_llm(model_name: str | None = None) -> ChatAnthropic:
+    """Returns an LLM client. If model_name is provided, a fresh client is created for that model."""
+    if model_name:
+        return ChatAnthropic(model=model_name, temperature=0)
+    
     global _llm
     if _llm is None:
-        _llm = ChatAnthropic(model="claude-3-haiku-20240307", temperature=0)
+        default_model = os.getenv("GEMFORGE_DEFAULT_LLM_MODEL", "claude-3-haiku-20240307")
+        _llm = ChatAnthropic(model=default_model, temperature=0)
     return _llm
 
 
@@ -93,8 +98,13 @@ def _inject_immune_system_context(messages):
     return messages
 
 
-def cost_aware_invoke(prompt_messages):
-    """Invoke the LLM and track token usage and cost."""
+def cost_aware_invoke(prompt_messages, model_name: str | None = None):
+    """Invoke the LLM and track token usage and cost.
+    
+    Args:
+        prompt_messages: List of HumanMessage/SystemMessage
+        model_name: Optional override for the LLM model (e.g. "claude-3-5-sonnet-20240620")
+    """
     max_attempts = max(1, int(os.getenv("GEMFORGE_LLM_MAX_ATTEMPTS", "3")))
     base_delay = max(0.1, float(os.getenv("GEMFORGE_LLM_RETRY_BASE_SECONDS", "1.5")))
 
@@ -103,7 +113,7 @@ def cost_aware_invoke(prompt_messages):
 
     for attempt in range(1, max_attempts + 1):
         try:
-            response = get_llm().invoke(prompt_messages)
+            response = get_llm(model_name=model_name).invoke(prompt_messages)
             
             # 1. Update the legacy singleton (with its internal lock)
             stats = cost_tracker.track_call(response)
