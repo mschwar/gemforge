@@ -65,3 +65,15 @@ pip install -r requirements.txt
 ---
 
 Built with LangGraph + Claude. Made in 12 steps.
+
+## Installation (Production Mode)
+
+Install in editable mode (development):
+
+    pip install -e .
+
+Then use from anywhere:
+
+    gemforge new "Your raw idea"
+
+One-command install coming soon via Homebrew tap.

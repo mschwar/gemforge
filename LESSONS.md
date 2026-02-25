@@ -62,3 +62,13 @@
 - Deploy success → git_publish_node → END (seamless after QA).
 - gh CLI only (user runs `gh auth login` once).
 - Every future gem now lives on GitHub with a ready PR for collaboration.
+
+### 2026-02-24 Version Control Closure
+- Module 3 fully operational (gh CLI auto-repo + push + PR).
+
+### 2026-02-24 Production-Grade Packaging (Module 4)
+
+- Professional packaging complete: pyproject.toml + src layout + "gemforge" entry point.
+- Backward-compatible thin launcher (gemforge_cli.py).
+- pip install -e . now makes the CLI available system-wide.
+- Ready for Homebrew tap in v2.0.

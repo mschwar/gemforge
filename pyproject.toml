@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gemforge"
+version = "1.0.0"
+description = "GemForge — Local AI Product Factory"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langgraph>=0.2",
+    "langchain-anthropic",
+    "python-dotenv",
+    "pydantic",
+    "jinja2"
+]
+
+[project.scripts]
+gemforge = "gemforge.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
