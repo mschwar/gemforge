@@ -163,25 +163,26 @@ def sre_node(state: PipelineState):
 def deploy_node(state: PipelineState):
     print("🔨 13. Final Deploy Agent...")
     repo_path = state.get("repo_path", "new-gem")
+    idea = state.get("raw_idea", "")
 
-    live_url = deploy_to_vercel(repo_path)
+    live_url = deploy_to_vercel(repo_path, idea)
 
     if live_url:
-        status = "live"
         print(f"\n🎉 APP IS NOW LIVE → {live_url}")
+        return {
+            "live_url": live_url,
+            "deploy_complete": True,
+            "deploy_status": "live",
+            "progress_log": [f"🎉 LIVE at {live_url}"],
+        }
     else:
-        app_name = os.path.basename(repo_path)
-        live_url = f"https://{app_name}.vercel.app (run: npx vercel --prod in {repo_path})"
-        status = "ready-to-deploy"
-        print(f"\n📦 Project ready. To deploy: cd {repo_path} && npx vercel --prod")
-        print("   (Run 'vercel login' first if you haven't already)")
-
-    return {
-        "live_url": live_url,
-        "deploy_complete": True,
-        "deploy_status": status,
-        "progress_log": [f"🚀 Deploy status: {status} — {live_url}"],
-    }
+        print(f"\n📦 Project ready locally at: {repo_path}")
+        return {
+            "live_url": None,
+            "deploy_complete": True,
+            "deploy_status": "local",
+            "progress_log": [f"📦 Project ready locally: {repo_path}"],
+        }
 
 # ====================== ROUTING ======================
 
