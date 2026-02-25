@@ -1,20 +1,41 @@
 #!/usr/bin/env python
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
+
+# Ensure repo root is on sys.path so pipeline.py, tools/, core/, and state.py
+# can be imported regardless of the user's current working directory.
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 
-import argparse
-import datetime
-import os
-import sys
+import argparse  # noqa: E402
+import datetime  # noqa: E402
+import os  # noqa: E402
 
-from pipeline import pipeline_app
-from state import create_initial_pipeline_state
+from pipeline import pipeline_app  # noqa: E402
+from state import create_initial_pipeline_state  # noqa: E402
+
+
+def validate_environment():
+    """Pre-flight check: fail fast with a clear message before touching anything."""
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("❌  ANTHROPIC_API_KEY is not set.")
+        print("    Add it to a .env file in the repo root, or export it:")
+        print("    export ANTHROPIC_API_KEY=sk-ant-...")
+        sys.exit(1)
+    from tools.file_tools import PROJECTS_ROOT
+    PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def cmd_new(args):
     raw_idea = args.idea
     source_docs_path = args.context
+
+    validate_environment()
 
     thread_id = f"gem-{raw_idea[:60].replace(' ', '-').replace('/', '')}"
 
@@ -43,6 +64,14 @@ def cmd_new(args):
     cumulative = cost_tracker.get_cumulative_cost()
     print(f"\n   💰 Session: ${cost_tracker.total_cost:.4f} | Tokens: {cost_tracker.total_tokens:,} | Calls: {cost_tracker.calls}")
     print(f"   📊 All-time total: ${cumulative:.4f}")
+
+    if result.get("approval_status") == "pending":
+        print("\n⏸️  Pipeline paused for human review.")
+        print("   Next commands:")
+        print("   python resume.py approve")
+        print("   python resume.py refine \"Your feedback\"")
+        return
+
     _print_final_report(result)
 
 
@@ -70,7 +99,7 @@ def cmd_list(args):
 def _find_thread_id_path() -> str:
     """Place .thread_id next to the factory root so resume.py can find it."""
     from pathlib import Path
-    return str(Path(__file__).resolve().parent.parent.parent.parent / ".thread_id")
+    return str(Path(__file__).resolve().parent.parent.parent / ".thread_id")
 
 
 def _print_final_report(result: dict):

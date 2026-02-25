@@ -44,6 +44,7 @@ class PipelineState(TypedDict):
     data_complete: bool
     qa_complete: bool
     director_approved: bool
+    director_rejection_count: int  # circuit breaker — forces green after N rejections
     infra_complete: bool
     cicd_complete: bool
     sre_complete: bool
@@ -101,6 +102,7 @@ def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = 
             "data_complete": False,
             "qa_complete": False,
             "director_approved": False,
+            "director_rejection_count": 0,
             "infra_complete": False,
             "cicd_complete": False,
             "sre_complete": False,

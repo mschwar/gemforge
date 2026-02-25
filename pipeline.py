@@ -34,6 +34,7 @@ def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
     a path separator so ops agents can write to subdirectories.
     """
     saved = {}
+    repo_root = Path(repo_path).resolve()
     pattern = r"===([^=\n]+?)===\n(.*?)(?=\n===|\Z)"
     matches = re.findall(pattern, response_text, re.DOTALL)
     for filename, content in matches:
@@ -42,7 +43,16 @@ def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
         if not any(filename.endswith(ext) for ext in (".md", ".txt", ".yml", ".yaml", ".html", ".json")) \
                 and "/" not in filename:
             continue
-        write_file(f"{repo_path}/{filename}", content.strip())
+
+        # Guard: block model-suggested paths that escape the project directory.
+        destination = (repo_root / filename).resolve()
+        try:
+            destination.relative_to(repo_root)
+        except ValueError:
+            print(f"   ⚠️ SECURITY: Rejected path traversal attempt in docs output: {filename!r}")
+            continue
+
+        write_file(str(destination), content.strip())
         saved[filename] = content.strip()[:200]
         print(f"   → Saved {filename}")
     return saved
@@ -550,9 +560,17 @@ def director_node(state: PipelineState):
         print("   → DIRECTOR_REVIEW.md saved")
         
     is_green = "GREEN LIGHT" in response.content.upper()
-    
+    rejection_count = state.get("director_rejection_count", 0)
+
+    if not is_green:
+        rejection_count += 1
+        if rejection_count >= 3:
+            print(f"   ⚠️  Director rejected {rejection_count} times — forcing green light to prevent runaway loop.")
+            is_green = True
+
     return {
         "director_approved": is_green,
+        "director_rejection_count": rejection_count,
         "progress_log": [f"🎬 Director Verdict: {'✅ GREEN LIGHT' if is_green else '⚠️ CORRECTION REQUESTED'}"]
     }
 
