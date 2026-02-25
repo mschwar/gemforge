@@ -2,7 +2,7 @@
   "template_name": "nextjs",
   "platform": "nextjs",
   "aliases": ["next", "nextjs-web", "web", "react-web"],
-  "supports_llm_generators": false,
+  "supports_llm_generators": true,
   "description": "Next.js App Router scaffold with a client-side counter core feature.",
   "required_files": [
     "package.json",

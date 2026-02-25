@@ -39,6 +39,7 @@ class PipelineState(TypedDict):
     backend_complete: bool
     data_complete: bool
     qa_complete: bool
+    director_approved: bool
     infra_complete: bool
     cicd_complete: bool
     sre_complete: bool
@@ -93,6 +94,7 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "backend_complete": False,
             "data_complete": False,
             "qa_complete": False,
+            "director_approved": False,
             "infra_complete": False,
             "cicd_complete": False,
             "sre_complete": False,

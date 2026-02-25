@@ -2,7 +2,7 @@
   "template_name": "react-native",
   "platform": "react-native",
   "aliases": ["rn", "reactnative", "expo", "expo-react-native"],
-  "supports_llm_generators": false,
+  "supports_llm_generators": true,
   "description": "Expo-based React Native starter with a counter core feature.",
   "required_files": [
     "package.json",

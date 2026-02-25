@@ -422,6 +422,41 @@ def qa_node(state: PipelineState):
     }
 
 
+def director_node(state: PipelineState):
+    print("🎬 20b. Director Review running...")
+    prompt = load_prompt("13_director.md")
+    repo_path = state.get("repo_path", "")
+    
+    def _safe_read(filename):
+        try:
+            with open(f"{repo_path}/{filename}", "r") as f:
+                return f.read()
+        except:
+            return "File not found."
+
+    context = (
+        f"POLISHED_VISION:\n{state['polished_vision']}\n\n"
+        f"ARCHITECTURE:\n{_safe_read('ARCHITECTURE.md')}\n\n"
+        f"FRONTEND_SPEC:\n{_safe_read('FRONTEND_SPEC.md')}\n\n"
+        f"BACKEND_SPEC:\n{_safe_read('BACKEND_SPEC.md')}\n\n"
+        f"DATA_SPEC:\n{_safe_read('DATA_SPEC.md')}\n\n"
+        f"QA_REPORT:\n{state.get('test_report', 'N/A')}"
+    )
+    
+    response = cost_aware_invoke([SystemMessage(content=prompt), HumanMessage(content=context)])
+    
+    if repo_path:
+        write_file(f"{repo_path}/DIRECTOR_REVIEW.md", response.content)
+        print("   → DIRECTOR_REVIEW.md saved")
+        
+    is_green = "GREEN LIGHT" in response.content.upper()
+    
+    return {
+        "director_approved": is_green,
+        "progress_log": [f"🎬 Director Verdict: {'✅ GREEN LIGHT' if is_green else '⚠️ CORRECTION REQUESTED'}"]
+    }
+
+
 # ====================== GIT PUBLISH NODE (Module 3) ======================
 def git_publish_node(state: PipelineState):
     """20_git_publish.md — auto GitHub repo + push + PR"""
@@ -528,7 +563,8 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
         ("backend", backend_node),
         ("data", data_node),
         ("qa_generator", qa_generator_node),
-    ("qa", qa_node),
+        ("qa", qa_node),
+        ("director", director_node),
         ("infra", infra_node),
         ("cicd", cicd_node),
         ("sre", sre_node),
@@ -566,11 +602,14 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge(["frontend", "backend", "data"], "qa_generator")
     workflow.add_edge("qa_generator", "qa")
     
+    workflow.add_edge("qa", "director")
+    
     workflow.add_conditional_edges(
-        "qa",
-        lambda s: "human_review" if not s.get("tests_passed", True) else "infra",
+        "director",
+        lambda s: "infra" if s.get("director_approved", True) else "human_review",
         {"human_review": "human_review", "infra": "infra"}
     )
+    
     workflow.add_edge("infra", "cicd")
     workflow.add_edge("cicd", "sre")
     workflow.add_edge("sre", "deploy")

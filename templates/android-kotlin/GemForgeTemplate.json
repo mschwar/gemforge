@@ -2,7 +2,7 @@
   "template_name": "android-kotlin",
   "platform": "android-kotlin",
   "aliases": ["android", "kotlin", "android-native"],
-  "supports_llm_generators": false,
+  "supports_llm_generators": true,
   "description": "Native Android Kotlin starter with a button-driven counter core feature.",
   "required_files": [
     "settings.gradle.kts",
