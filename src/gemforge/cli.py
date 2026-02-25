@@ -23,6 +23,8 @@ import os  # noqa: E402
 from pipeline import get_pipeline_app  # noqa: E402
 from state import create_initial_pipeline_state  # noqa: E402
 from core.runtime.event_logger import event_logger # noqa: E402
+from core.build.taint_manager import taint_manager # noqa: E402
+from core.build.cache import build_cache # noqa: E402
 
 # ---------------------------------------------------------------------------
 # SIGINT handler — persists cost to DB before exit so no session data is lost
@@ -300,6 +302,37 @@ def cmd_runs_tail(args):
         print(f"{'═' * 60}\n")
 
 
+def cmd_build_taint(args):
+    run_id = args.run_id
+    node_id = args.node_id
+    reason = args.reason
+    taint_manager.taint_node(run_id, node_id, reason)
+    print(f"   ✅ Node '{node_id}' and all downstream dependents tainted for run {run_id}.")
+
+
+def cmd_build_status(args):
+    import sqlite3
+    run_id = args.run_id
+    
+    print(f"\n{'═' * 60}")
+    print(f"  🏗️  Build Status for run: {run_id}")
+    print(f"{'═' * 60}")
+    
+    with sqlite3.connect(taint_manager.db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT node_id, reason, created_at FROM tainted_nodes WHERE run_id = ?", (run_id,))
+        tainted = cur.fetchall()
+        
+    if not tainted:
+        print("   ✅ No nodes are currently tainted. Everything is up to date.")
+    else:
+        print(f"   🚩 Found {len(tainted)} stale (tainted) nodes:")
+        for row in tainted:
+            print(f"     - {row['node_id']:<20} | Reason: {row['reason']:<20} | Stale since: {row['created_at']}")
+            
+    print(f"{'═' * 60}\n")
+
+
 # ---------------------------------------------------------------------------
 # Argparse entry point
 # ---------------------------------------------------------------------------
@@ -358,6 +391,18 @@ def main():
     runs_tail_parser.add_argument("run_id", help="The run ID to tail")
     runs_tail_parser.add_argument("-f", "--follow", action="store_true", help="Follow the event stream")
 
+    # gemforge build {status, taint}
+    build_parser = subparsers.add_parser("build", help="Manage deterministic build state and cache")
+    build_sub = build_parser.add_subparsers(dest="build_action", metavar="<action>")
+
+    build_status_parser = build_sub.add_parser("status", help="Show build status (stale nodes) for a run")
+    build_status_parser.add_argument("run_id", help="The run ID to check")
+
+    build_taint_parser = build_sub.add_parser("taint", help="Manually mark a node as stale")
+    build_taint_parser.add_argument("run_id", help="The run ID")
+    build_taint_parser.add_argument("node_id", help="The node ID to taint")
+    build_taint_parser.add_argument("--reason", default="manual_taint", help="Reason for tainting")
+
     args = parser.parse_args()
 
     if args.command == "new":
@@ -376,6 +421,14 @@ def main():
             cmd_runs_tail(args)
         else:
             runs_parser.print_help()
+            sys.exit(1)
+    elif args.command == "build":
+        if args.build_action == "status":
+            cmd_build_status(args)
+        elif args.build_action == "taint":
+            cmd_build_taint(args)
+        else:
+            build_parser.print_help()
             sys.exit(1)
     else:
         parser.print_help()

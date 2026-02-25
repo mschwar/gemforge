@@ -73,7 +73,38 @@ from core.runtime.schema import StepEvent
 from core.memory.semantic_index import semantic_indexer
 from core.memory.retriever import semantic_retriever
 from core.repair.agentic_loop import repair_node
+from core.build.hasher import calculate_string_hash, calculate_dir_hash, calculate_file_hash
+from core.build.cache import build_cache
+from core.build.taint_manager import taint_manager
 import functools
+
+def _calculate_input_hash(state: PipelineState, step_id: str) -> str:
+    """Calculates a deterministic hash of the inputs relevant to a step."""
+    # Base inputs for almost all nodes
+    inputs = {
+        "raw_idea": state.get("raw_idea", ""),
+        "source_docs_path": state.get("source_docs_path", ""),
+        "step_id": step_id
+    }
+    
+    # Add step-specific dependencies
+    if step_id in ["vision_polisher", "ruthless_interrogator"]:
+        inputs["audited_context"] = state.get("audited_context", "")
+    
+    if step_id == "vision_polisher":
+        inputs["human_feedback"] = state.get("human_feedback", "")
+        
+    if step_id in ["frontend", "backend", "data", "qa_generator", "code_orchestrator"]:
+        inputs["polished_vision"] = state.get("polished_vision", "")
+        inputs["selected_platform"] = state.get("selected_platform", "")
+        # Also incorporate the actual spec files if they exist on disk
+        repo_path = state.get("repo_path")
+        if repo_path and os.path.exists(repo_path):
+            inputs["dir_hash"] = calculate_dir_hash(Path(repo_path))
+
+    # Serialize and hash
+    serialized = json.dumps(inputs, sort_keys=True)
+    return calculate_string_hash(serialized)
 
 from langgraph.errors import GraphInterrupt
 from tools.cost_tracker import cost_tracker
@@ -91,6 +122,21 @@ def logged_node(node_func):
         run_id = state.get("run_id", "unknown-run")
         step_id = node_func.__name__.replace("_node", "")
         
+        # 0. Cache Check (Phase 1)
+        input_hash = _calculate_input_hash(state, step_id)
+        use_cache = os.getenv("GEMFORGE_USE_CACHE", "true").lower() == "true"
+        is_tainted = taint_manager.is_tainted(run_id, step_id)
+        
+        if use_cache and not is_tainted:
+            cached_result = build_cache.get(input_hash, step_id)
+            if cached_result:
+                # Add a marker so we know it was cached
+                cached_result["_from_cache"] = True
+                return cached_result
+
+        if is_tainted:
+            print(f"   🚩 [BUILD] Node {step_id} is stale (tainted). Bypassing cache.")
+
         # 1. Routing Logic (Strangler/Worker Proxy)
         is_worker = os.getenv("GEMFORGE_IS_WORKER", "false").lower() == "true"
         worker_enabled = os.getenv("GEMFORGE_WORKER_ENABLED", "false").lower() == "true"
@@ -127,6 +173,14 @@ def logged_node(node_func):
                 patch["total_tokens"] = state.get("total_tokens", 0) + metrics.get("tokens_used", 0)
                 patch["total_cost"] = state.get("total_cost", 0.0) + metrics.get("cost_usd", 0.0)
 
+            # Store the worker's result in cache
+            if use_cache:
+                build_cache.set(input_hash, step_id, patch)
+            
+            # Clear taint if it was tainted
+            if is_tainted:
+                taint_manager.clear_taint(run_id, step_id)
+
             return patch
 
         # 2. Execution Logic (Standard Sync or inside Worker)
@@ -147,6 +201,14 @@ def logged_node(node_func):
             duration = time.time() - start_time
             tokens_used = cost_tracker.total_tokens - start_tokens
             cost_incurred = cost_tracker.total_cost - start_cost
+
+            # Store result in cache
+            if use_cache:
+                build_cache.set(input_hash, step_id, result)
+            
+            # Clear taint if it was tainted
+            if is_tainted:
+                taint_manager.clear_taint(run_id, step_id)
 
             # Publish: step.completed
             event_bus.publish(StepEvent(
@@ -341,6 +403,19 @@ def bootstrapper_node(state: PipelineState):
         canonical_docs = {}
 
     print(f"   → Project ready: {repo_path}")
+    
+    # 4. Generate Build Manifest (Phase 0)
+    manifest = {
+        "project_name": gem_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "bootstrap_hash": calculate_dir_hash(Path(repo_path)),
+        "files": {
+            str(p.relative_to(repo_path)): calculate_file_hash(p)
+            for p in Path(repo_path).glob("*") if p.is_file() and not p.name.startswith(".")
+        }
+    }
+    write_file(f"{repo_path}/BUILD_MANIFEST.json", json.dumps(manifest, indent=2))
+
     return {
         "repo_path": repo_path,
         "repo_created": True,
@@ -491,6 +566,7 @@ def platform_decision_node(state: PipelineState):
 def code_orchestrator_node(state: PipelineState):
     print("🔨 6. Code Generation Orchestrator — launching real generators...")
     repo_path = state.get("repo_path", "")
+    gem_name = state.get("raw_idea", "NewGem")[:50]
     from tools.executor_tools import build_and_verify_xcode, parse_and_save_generated_code
 
     manifest_path = f"{repo_path}/PLATFORM_MANIFEST.md"
