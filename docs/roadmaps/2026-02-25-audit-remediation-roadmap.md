@@ -71,3 +71,31 @@ Scope: Remove run-collision risk and make cost/state accounting consistent acros
 ### Rollback Plan
 - Keep old thread-ID lookup as fallback candidate for one release cycle.
 - If cost persistence introduces duplicate writes, gate with idempotency token in session finalizer.
+
+## Phase 3: Generation and Context Robustness
+Scope: Bound LLM context costs and enforce minimum generation integrity guarantees.
+
+### Actions
+1. Add global budget to `bundle_context` (file count + byte budget + optional token estimate) (GF-004).
+2. Rank/trim context inputs by relevance to `raw_idea` and key file patterns (GF-004).
+3. Make code-orchestrator fail when generator write count is below threshold (GF-006).
+4. Emit explicit structured progress/error entries when generation blocks are malformed (GF-006).
+5. Add tests for bounded ingestion and zero-write generator failure semantics (GF-004, GF-006).
+
+### Gates
+- Gate P3-G1 (Context Bound):
+  - Maximum bundled context size is enforced and test-validated.
+  - Evidence: test with oversized synthetic tree proving deterministic truncation.
+- Gate P3-G2 (Cost Guardrail):
+  - Context builder reports dropped file count and estimated budget usage in logs/state.
+  - Evidence: snapshot test or structured output assertion.
+- Gate P3-G3 (Generation Integrity):
+  - If any required generator writes `0` files, node exits with failure signal and halts forward progression.
+  - Evidence: test with mocked malformed LLM output.
+
+### Exit Criteria
+- P3 gates pass and no silent-success path remains for empty generation outputs.
+- Cost/cap parameters documented in README + `.env.example`.
+
+### Rollback Plan
+- Feature-flag strict generation thresholds for one release if false positives appear on edge prompts.
