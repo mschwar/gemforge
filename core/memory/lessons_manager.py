@@ -61,3 +61,7 @@ class LessonsManager:
     def get_for_evolver(self, limit: int = 20):
         # Returns lessons ready for prompt evolution
         return self.get_recent_lessons(limit=limit, min_impact=6)
+
+
+# Module-level singleton — shared across all callers to avoid multiple SQLite connections.
+lessons_manager = LessonsManager()

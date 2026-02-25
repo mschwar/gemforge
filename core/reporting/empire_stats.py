@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 
-from core.memory.lessons_manager import LessonsManager
-from core.memory.user_taste_manager import UserTasteManager
+from core.memory.lessons_manager import lessons_manager
+from core.memory.user_taste_manager import user_taste_manager
 
 
 class EmpireStats:
@@ -12,8 +12,8 @@ class EmpireStats:
             self.projects_root = PROJECTS_ROOT
         else:
             self.projects_root = Path(projects_root)
-        self.lessons_mgr = LessonsManager()
-        self.taste_mgr = UserTasteManager()
+        self.lessons_mgr = lessons_manager
+        self.taste_mgr = user_taste_manager
         self.checkpoints_db = "checkpoints.db"
 
     def get_total_costs(self) -> float:

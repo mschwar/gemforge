@@ -4,14 +4,14 @@ import re
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.llm import cost_aware_invoke, load_prompt
-from core.memory.lessons_manager import LessonsManager
-from core.memory.user_taste_manager import UserTasteManager
+from core.memory.lessons_manager import lessons_manager
+from core.memory.user_taste_manager import user_taste_manager
 
 
 class Oracle:
     def __init__(self):
-        self.lessons_mgr = LessonsManager()
-        self.taste_mgr = UserTasteManager()
+        self.lessons_mgr = lessons_manager
+        self.taste_mgr = user_taste_manager
 
     def generate_predictions(self) -> list:
         """

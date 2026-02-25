@@ -479,15 +479,11 @@ def sre_node(state: PipelineState):
 def deploy_node(state: PipelineState):
     print("🔨 13. Final Deploy Agent...")
     repo_path = state.get("repo_path", "new-gem")
-    idea = state.get("raw_idea", "")
     selected_platform = str(state.get("selected_platform", "")).strip().lower()
 
-    native_platforms = {"ios-swiftui", "flutter", "react-native", "android-kotlin"}
-    if selected_platform in native_platforms:
-        # Force native skip even when the raw idea text does not include native keywords.
-        live_url = deploy_to_vercel(repo_path, selected_platform)
-    else:
-        live_url = deploy_to_vercel(repo_path, idea)
+    # Always use selected_platform for native detection — never raw idea text.
+    # Passing idea text can misclassify web apps whose description mentions "iOS".
+    live_url = deploy_to_vercel(repo_path, selected_platform)
 
     if live_url:
         print(f"\n🎉 APP IS NOW LIVE → {live_url}")
@@ -658,9 +654,13 @@ def weaver_node(state: PipelineState):
     
     stats = parse_and_log_weaver_output(response.content, gem_id)
     print(f"   → Weaver complete: {stats['lessons_count']} lessons, {stats['taste_updates_count']} taste updates.")
-    
+
+    # Stamp final cost into PipelineState so checkpointed state is accurate.
+    from tools.cost_tracker import cost_tracker
     return {
-        "progress_log": [f"🕸️ Weaver Reflector: {stats['lessons_count']} lessons captured"]
+        "total_cost": cost_tracker.total_cost,
+        "total_tokens": cost_tracker.total_tokens,
+        "progress_log": [f"🕸️ Weaver Reflector: {stats['lessons_count']} lessons captured"],
     }
 
 

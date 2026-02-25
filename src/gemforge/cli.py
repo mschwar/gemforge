@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import signal
 import sys
 from pathlib import Path
 
@@ -20,6 +21,97 @@ from pipeline import get_pipeline_app  # noqa: E402
 from state import create_initial_pipeline_state  # noqa: E402
 
 
+# ---------------------------------------------------------------------------
+# SIGINT handler — persists cost to DB before exit so no session data is lost
+# ---------------------------------------------------------------------------
+def _sigint_handler(signum, frame):
+    print("\n\n⚠️  Interrupted — saving cost data before exit...")
+    try:
+        from tools.cost_tracker import cost_tracker
+        cost_tracker.finalize_session()
+        print(f"   💰 Partial session: ${cost_tracker.total_cost:.4f} | Calls: {cost_tracker.calls}")
+    except Exception:
+        pass
+    sys.exit(130)  # conventional exit code for SIGINT (128 + 2)
+
+
+# ---------------------------------------------------------------------------
+# Thread-ID helpers (shared by cmd_new and cmd_resume)
+# ---------------------------------------------------------------------------
+def _find_thread_id_path() -> str:
+    """Canonical .thread_id location — repo root, shared with resume.py."""
+    return str(_REPO_ROOT / ".thread_id")
+
+
+def _thread_id_candidates() -> list:
+    root = _REPO_ROOT
+    # Include one level up for backward-compat with very early sessions.
+    return [root / ".thread_id", root.parent / ".thread_id"]
+
+
+def _load_thread_id(explicit: str | None) -> str:
+    if explicit:
+        return explicit.strip()
+    existing = [p for p in _thread_id_candidates() if p.exists() and p.read_text().strip()]
+    if existing:
+        newest = max(existing, key=lambda p: p.stat().st_mtime)
+        return newest.read_text().strip()
+    print("❌  No active session found and no thread-id provided.")
+    print("    Run 'gemforge new \"your idea\"' first, then come back here.")
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Shared reporting helpers
+# ---------------------------------------------------------------------------
+def _finalize_and_report(result: dict):
+    """Persist cost and print the final report after any pipeline resume."""
+    from tools.cost_tracker import cost_tracker
+    cost_tracker.finalize_session()
+    cumulative = cost_tracker.get_cumulative_cost()
+    print(f"\n   💰 Session: ${cost_tracker.total_cost:.4f} | Tokens: {cost_tracker.total_tokens:,} | Calls: {cost_tracker.calls}")
+    print(f"   📊 All-time total: ${cumulative:.4f}")
+
+    if result.get("approval_status") == "pending":
+        print("\n⏸️  Pipeline paused for another review gate.")
+        print("   gemforge resume approve")
+        print("   gemforge resume refine \"Your feedback\"")
+    else:
+        _print_final_report(result)
+
+
+def _print_final_report(result: dict):
+    repo_path = result.get("repo_path", "")
+    live_url = result.get("live_url")
+    print("\n" + "═" * 80)
+    print("  🎉  GEMFORGE MISSION COMPLETE")
+    print("═" * 80)
+    print(f"  Project:  {repo_path or 'N/A'}")
+    print(f"  Live URL: {live_url or 'Native project — open in Xcode/Android Studio'}")
+    print()
+    print("  What to do next:")
+    if repo_path:
+        print(f"     cd {repo_path}")
+    if live_url:
+        print(f"     open {live_url}")
+    elif repo_path:
+        xcodeprojs = [f for f in os.listdir(repo_path) if f.endswith(".xcodeproj")] if os.path.isdir(repo_path) else []
+        if xcodeprojs:
+            print(f"     open {xcodeprojs[0]}")
+        else:
+            print("     npm run dev  # or open in Xcode / Android Studio")
+    print()
+    print("  Progress log:")
+    for line in result.get("progress_log", []):
+        print(f"    {line}")
+    print()
+    print("  ✅ Your app is ready. Go ship it.")
+    print("═" * 80)
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 def validate_environment():
     """Pre-flight check: fail fast with a clear message before touching anything."""
     if not os.getenv("ANTHROPIC_API_KEY"):
@@ -36,6 +128,7 @@ def cmd_new(args):
     source_docs_path = args.context
 
     validate_environment()
+    signal.signal(signal.SIGINT, _sigint_handler)
 
     thread_id = f"gem-{raw_idea[:60].replace(' ', '-').replace('/', '')}"
 
@@ -68,11 +161,39 @@ def cmd_new(args):
     if result.get("approval_status") == "pending":
         print("\n⏸️  Pipeline paused for human review.")
         print("   Next commands:")
-        print("   python resume.py approve")
-        print("   python resume.py refine \"Your feedback\"")
+        print("   gemforge resume approve")
+        print("   gemforge resume refine \"Your feedback\"")
         return
 
     _print_final_report(result)
+
+
+def cmd_resume(args):
+    from langgraph.types import Command
+
+    signal.signal(signal.SIGINT, _sigint_handler)
+    thread_id = _load_thread_id(getattr(args, "thread", None))
+    config = {"configurable": {"thread_id": thread_id}}
+
+    if args.action == "approve":
+        print(f"   Resuming thread: {thread_id}")
+        print("✅ Approved — continuing pipeline...")
+        result = get_pipeline_app().invoke(Command(resume={"action": "approved"}), config)
+        _finalize_and_report(result)
+
+    elif args.action == "refine":
+        feedback = args.feedback
+        print(f"   Resuming thread: {thread_id}")
+        print(f"🔄 Refining with feedback: {feedback}")
+        result = get_pipeline_app().invoke(Command(resume={"action": "rejected", "feedback": feedback}), config)
+        print("\n" + "─" * 80)
+        print("  REFINED VISION")
+        print("─" * 80)
+        print(result.get("polished_vision", ""))
+        print("─" * 80)
+        print("\n⏸️  Review the refined vision, then:")
+        print("   gemforge resume approve")
+        print("   gemforge resume refine \"More feedback\"")
 
 
 def cmd_list(args):
@@ -96,41 +217,9 @@ def cmd_list(args):
     print(f"\n{'═' * 60}\n")
 
 
-def _find_thread_id_path() -> str:
-    """Place .thread_id next to the factory root so resume.py can find it."""
-    from pathlib import Path
-    return str(Path(__file__).resolve().parent.parent.parent / ".thread_id")
-
-
-def _print_final_report(result: dict):
-    repo_path = result.get("repo_path", "")
-    live_url = result.get("live_url")
-    print("\n" + "═" * 80)
-    print("  🎉  GEMFORGE MISSION COMPLETE")
-    print("═" * 80)
-    print(f"  Project:  {repo_path or 'N/A'}")
-    print(f"  Live URL: {live_url or 'Native project — open in Xcode/Android Studio'}")
-    print()
-    print("  What to do next:")
-    if repo_path:
-        print(f"     cd {repo_path}")
-    if live_url:
-        print(f"     open {live_url}")
-    elif repo_path:
-        xcodeprojs = [f for f in os.listdir(repo_path) if f.endswith(".xcodeproj")] if os.path.isdir(repo_path) else []
-        if xcodeprojs:
-            print(f"     open {xcodeprojs[0]}")
-        else:
-            print("     npm run dev  # or open in Xcode / Android Studio")
-    print()
-    print("  Progress log:")
-    for line in result.get("progress_log", []):
-        print(f"    {line}")
-    print()
-    print("  ✅ Your app is ready. Go ship it.")
-    print("═" * 80)
-
-
+# ---------------------------------------------------------------------------
+# Argparse entry point
+# ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
         prog="gemforge",
@@ -148,6 +237,23 @@ def main():
         default=None,
     )
 
+    # gemforge resume {approve,refine}
+    resume_parser = subparsers.add_parser("resume", help="Approve or refine after a human review gate")
+    resume_sub = resume_parser.add_subparsers(dest="action", metavar="<action>")
+
+    approve_parser = resume_sub.add_parser("approve", help="Approve the polished vision and continue")
+    approve_parser.add_argument(
+        "--thread", metavar="THREAD_ID", default=None,
+        help="Thread ID (auto-detected from last session if omitted)",
+    )
+
+    refine_parser = resume_sub.add_parser("refine", help="Send feedback and re-polish the vision")
+    refine_parser.add_argument("feedback", help="Your refinement feedback")
+    refine_parser.add_argument(
+        "--thread", metavar="THREAD_ID", default=None,
+        help="Thread ID (auto-detected from last session if omitted)",
+    )
+
     # gemforge list
     list_parser = subparsers.add_parser("list", help="List all forged projects")
     list_parser.add_argument(
@@ -162,6 +268,11 @@ def main():
 
     if args.command == "new":
         cmd_new(args)
+    elif args.command == "resume":
+        if not args.action:
+            resume_parser.print_help()
+            sys.exit(1)
+        cmd_resume(args)
     elif args.command == "list":
         cmd_list(args)
     else:
