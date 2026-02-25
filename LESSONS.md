@@ -50,3 +50,8 @@
 - Conditional routing: tests fail > 0 → human_review gate (user can refine or approve).
 - Repair lessons: Always restore from clean backup before complex edits; use dedicated /tmp Python scripts for all multi-line changes to avoid shell escaping.
 - QA will now run on every generated project (including the 5 existing ones in ../gemforge-projects/).
+
+### 2026-02-24 Real QA Layer Closure
+- Full Module 2 deployed cleanly (agent, tools, state fields, nodes, conditional gate).
+- Pipeline now auto-pauses on test failure — user must review before infra/deploy.
+- Ready for live testing on the 5 existing projects in ../gemforge-projects/.
