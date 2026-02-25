@@ -127,3 +127,46 @@ Scope: Remove ambiguous fail-open behavior and make operator intervention points
 
 ### Rollback Plan
 - Keep legacy warn-only path behind temporary env flag during one stabilization cycle.
+
+## Phase 5: Test Fidelity, DX, and AI-Native Maintainability
+Scope: Close coverage and ergonomics gaps so human and AI contributors can safely evolve the system.
+
+### Actions
+1. Standardize test invocation so `pytest` and `python -m pytest` both work from repo root (GF-008).
+2. Add integration-focused tests for `new → review pause → resume approve/refine` critical flow (GF-008).
+3. Add tests for deploy/publish failure-state reporting and gating interactions (GF-007, GF-008).
+4. Split orchestration concerns into stage modules (`pipeline/stages/*.py`) to lower blast radius of edits (cross-cutting).
+5. Add concise architectural map and state-transition docs for AI coding assistants (cross-cutting AI-DX).
+
+### Gates
+- Gate P5-G1 (Command Ergonomics):
+  - `pytest -q` passes in a clean venv without manual `PYTHONPATH` export.
+  - Evidence: CI job running plain pytest command.
+- Gate P5-G2 (Flow Coverage):
+  - Critical pipeline flow has integration coverage for pause/resume and error branches.
+  - Evidence: tests proving gate transitions and final state correctness.
+- Gate P5-G3 (Cognitive Load Reduction):
+  - Orchestrator size and responsibilities are reduced with stage-level module boundaries.
+  - Evidence: architecture diff and module-level ownership map.
+
+### Exit Criteria
+- Critical-path tests are mandatory in CI.
+- New contributors can run and validate full local flow from README steps without path workarounds.
+
+## Traceability Matrix (All Findings Covered)
+| Finding | Phase(s) | Closure Mechanism |
+|---|---|---|
+| GF-001 | Phase 1 | Framework-aware deploy path; static fallback only for non-framework repos |
+| GF-002 | Phase 2 | Unique project path/thread ID generation + collision tests |
+| GF-003 | Phase 1 | Fail-closed QA + no force-green director behavior |
+| GF-004 | Phase 3 | Context bundling budgets and relevance-based trimming |
+| GF-005 | Phase 2 | Refine-path session/cost persistence parity |
+| GF-006 | Phase 3 | Minimum write-count enforcement in code generation |
+| GF-007 | Phase 4 (+5) | Critical/non-critical failure semantics + operator-visible errors |
+| GF-008 | Phase 5 | Test command ergonomics + critical-flow coverage expansion |
+
+## Commit Checkpoints (Per Major Phase Step)
+- Phase 1 roadmap checkpoint: `81d2198`
+- Phase 2 roadmap checkpoint: `d2793fa`
+- Phase 3 roadmap checkpoint: `d51716a`
+- Phase 4 roadmap checkpoint: `6f6b7e2`
