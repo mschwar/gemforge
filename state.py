@@ -8,6 +8,10 @@ class PipelineState(TypedDict):
 
     # Input from user
     raw_idea: str
+    source_docs_path: str | None
+
+    # After Document Auditor
+    audited_context: str | None
 
     # After Vision Polisher
     polished_vision: str
@@ -69,12 +73,14 @@ class PipelineState(TypedDict):
     last_audit_timestamp: str | None
     protocol_version: str
 
-def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
+def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = None) -> PipelineState:
     """Disciplined factory — always used instead of manual dicts."""
     with discipline_step(5, "StateInit", f"Create disciplined initial state for idea: {raw_idea[:60]}..."):
         enforcer = DisciplineEnforcer()
         state: PipelineState = {
             "raw_idea": raw_idea,
+            "source_docs_path": source_docs_path,
+            "audited_context": None,
             "polished_vision": "",
             "vision_approved": False,
             "human_feedback": None,

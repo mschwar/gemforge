@@ -44,20 +44,52 @@ def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
         print(f"   → Saved {filename}")
     return saved
 
+from tools.ingestor_tools import bundle_context
+
 # ====================== NODES ======================
+
+def document_auditor_node(state: PipelineState):
+    path = state.get("source_docs_path")
+    if not path or not os.path.exists(path):
+        print("⏭️  Skipping Document Auditor (no path provided)")
+        return {"audited_context": None}
+
+    print(f"🔨 0. Document Auditor sifting through {path}...")
+    context_bundle = bundle_context(path)
+    
+    prompt = load_prompt("28_document_auditor.md")
+    user_content = f"DIRECTORY_CONTEXT:\n\n{context_bundle}\n\nRAW_IDEA: {state['raw_idea']}"
+    
+    messages = [SystemMessage(content=prompt), HumanMessage(content=user_content)]
+    response = cost_aware_invoke(messages)
+    
+    print("   → Audit complete. Nucleus extracted.")
+    return {
+        "audited_context": response.content,
+        "progress_log": ["✅ Document Audit complete"],
+    }
 
 def vision_polisher_node(state: PipelineState):
     print("🔨 1. Vision Polisher running...")
     prompt = load_prompt("01_vision_polisher.md")
     feedback = state.get("human_feedback")
+    audited = state.get("audited_context")
+    
     if feedback:
         user_content = (
             f"Raw Idea: {state['raw_idea']}\n\n"
             f"Previous polished vision:\n{state['polished_vision']}\n\n"
             f"User feedback: {feedback}\n\nPlease refine the vision based on this feedback."
         )
+    elif audited:
+        user_content = (
+            f"Raw Idea: {state['raw_idea']}\n\n"
+            f"DOCUMENT_AUDIT_NUCLEUS:\n{audited}\n\n"
+            "Please incorporate the audit findings into the polished vision."
+        )
     else:
         user_content = f"Raw Idea: {state['raw_idea']}"
+    
     messages = [SystemMessage(content=prompt), HumanMessage(content=user_content)]
     response = cost_aware_invoke(messages)
     print("   → Polished vision ready for approval")
@@ -550,6 +582,7 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow = StateGraph(PipelineState)
     
     nodes = [
+        ("document_auditor", document_auditor_node),
         ("vision_polisher", vision_polisher_node),
         ("human_review", human_review_node),
         ("ruthless_interrogator", ruthless_interrogator_node),
@@ -577,7 +610,8 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     for name, func in nodes:
         workflow.add_node(name, func)
     
-    workflow.set_entry_point("vision_polisher")
+    workflow.set_entry_point("document_auditor")
+    workflow.add_edge("document_auditor", "vision_polisher")
     workflow.add_edge("vision_polisher", "human_review")
     
     workflow.add_conditional_edges(

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import sys
+import argparse
 from pipeline import pipeline_app
 from state import create_initial_pipeline_state
 from core.discipline.enforcer import enforce_protocol
@@ -10,14 +11,25 @@ from core.discipline.enforcer import enforce_protocol
 @enforce_protocol(
     step_number=5,
     short_name="CLIEntry",
-    description="Production gemforge CLI (gemforge new \"idea\")"
+    description="Production gemforge CLI (gemforge new \"idea\" --context path)"
 )
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] != "new":
-        print("Usage: gemforge new \"Your raw idea\"")
+    parser = argparse.ArgumentParser(description="GemForge AI Product Factory")
+    subparsers = parser.add_subparsers(dest="command")
+
+    new_parser = subparsers.add_parser("new", help="Create a new gem")
+    new_parser.add_argument("idea", help="The raw idea for your app")
+    new_parser.add_argument("--context", help="Path to a directory of existing documents/code", default=None)
+
+    args = parser.parse_args()
+
+    if args.command != "new":
+        parser.print_help()
         sys.exit(1)
 
-    raw_idea = sys.argv[2]
+    raw_idea = args.idea
+    source_docs_path = args.context
+    
     thread_id = f"gem-{raw_idea[:60].replace(' ', '-').replace('/', '')}"
 
     with open(".thread_id", "w") as f:
@@ -28,10 +40,12 @@ def main():
     print("                    Raw Idea → Complete Runnable App")
     print("═"*80)
     print(f"  Idea:   {raw_idea[:76]}")
+    if source_docs_path:
+        print(f"  Docs:   {source_docs_path}")
     print(f"  Thread: {thread_id}")
     print("═"*80)
 
-    initial_state = create_initial_pipeline_state(raw_idea)
+    initial_state = create_initial_pipeline_state(raw_idea, source_docs_path)
     config = {"configurable": {"thread_id": thread_id}}
 
     print("\n🚀 Launching full factory...\n")
