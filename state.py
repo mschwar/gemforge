@@ -56,6 +56,10 @@ class PipelineState(TypedDict):
     git_repo_url: str
     pr_url: str
 
+    # Cost Tracking (Module 5)
+    total_tokens: int
+    total_cost: float
+
     # === DISCIPLINE PROTOCOL INTEGRATION ===
     discipline_enforced: bool
     last_audit_timestamp: str | None
@@ -96,6 +100,8 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "git_published": False,
             "git_repo_url": "",
             "pr_url": "",
+            "total_tokens": 0,
+            "total_cost": 0.0,
             # Discipline fields
             "discipline_enforced": True,
             "last_audit_timestamp": enforcer.timestamp(),

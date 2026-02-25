@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+src/gemforge/__init__.py
+src/gemforge/cli.py
+src/gemforge.egg-info/PKG-INFO
+src/gemforge.egg-info/SOURCES.txt
+src/gemforge.egg-info/dependency_links.txt
+src/gemforge.egg-info/entry_points.txt
+src/gemforge.egg-info/requires.txt
+src/gemforge.egg-info/top_level.txt
+tests/test_template_application.py

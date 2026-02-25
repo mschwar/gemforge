@@ -37,6 +37,8 @@ def main():
     print("\n🚀 Launching full factory...\n")
     result = pipeline_app.invoke(initial_state, config)
 
+    from tools.cost_tracker import cost_tracker
+    print(f"   💰 Total cost: ${cost_tracker.total_cost:.4f} | Tokens: {cost_tracker.total_tokens} | Calls: {cost_tracker.calls}")
     print_final_report(result)
 
 def print_final_report(result: dict):

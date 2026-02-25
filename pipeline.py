@@ -56,7 +56,7 @@ def vision_polisher_node(state: PipelineState):
     else:
         user_content = f"Raw Idea: {state['raw_idea']}"
     messages = [SystemMessage(content=prompt), HumanMessage(content=user_content)]
-    response = llm.invoke(messages)
+    response = cost_aware_invoke(messages)
     print("   → Polished vision ready for approval")
     return {
         "polished_vision": response.content,
@@ -80,7 +80,7 @@ def ruthless_interrogator_node(state: PipelineState):
         SystemMessage(content=prompt),
         HumanMessage(content=f"POLISHED_VISION:\n\n{state['polished_vision']}\n\nGenerate all canonical docs now.")
     ]
-    response = llm.invoke(messages)
+    response = cost_aware_invoke(messages)
     return {
         "canonical_docs": {"_raw_output": response.content},
         "progress_log": ["✅ Canonical docs generated"],
@@ -117,7 +117,7 @@ def uiux_node(state: PipelineState):
         f"{k}: {v}" for k, v in state.get("canonical_docs", {}).items() if not k.startswith("_")
     )
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
-    response = llm.invoke(messages)
+    response = cost_aware_invoke(messages)
     if repo_path:
         write_file(f"{repo_path}/UIUX_SPEC.md", response.content)
         print("   → UIUX_SPEC.md saved")
@@ -131,7 +131,7 @@ def architecture_node(state: PipelineState):
         f"{k}: {v}" for k, v in state.get("canonical_docs", {}).items() if not k.startswith("_")
     )
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project context:\n\n{context}")]
-    response = llm.invoke(messages)
+    response = cost_aware_invoke(messages)
     if repo_path:
         write_file(f"{repo_path}/ARCHITECTURE.md", response.content)
         print("   → ARCHITECTURE.md saved")
@@ -151,7 +151,7 @@ def platform_decision_node(state: PipelineState):
         pass
     context = f"POLISHED_VISION:\n{polished_vision}\n\nARCHITECTURE:\n{arch_content}"
     messages = [SystemMessage(content=prompt), HumanMessage(content=context)]
-    response = llm.invoke(messages)
+    response = cost_aware_invoke(messages)
     manifest_data = parse_platform_manifest(response.content)
     if repo_path:
         write_file(f"{repo_path}/PLATFORM_MANIFEST.md", response.content)
@@ -212,19 +212,19 @@ def code_orchestrator_node(state: PipelineState):
         # 1. UI Code Generator
         prompt = load_prompt("16_ui_code_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
-        ui_response = llm.invoke(messages)
+        ui_response = cost_aware_invoke(messages)
         parse_and_save_generated_code(repo_path, ui_response.content)
 
         # 2. Core Logic Generator
         prompt = load_prompt("17_core_logic_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
-        logic_response = llm.invoke(messages)
+        logic_response = cost_aware_invoke(messages)
         parse_and_save_generated_code(repo_path, logic_response.content)
 
         # 3. Platform-Specific Generator
         prompt = load_prompt("18_platform_specific_generator.md")
         messages = [SystemMessage(content=prompt), HumanMessage(content=generator_context)]
-        platform_response = llm.invoke(messages)
+        platform_response = cost_aware_invoke(messages)
         parse_and_save_generated_code(repo_path, platform_response.content)
         progress.append("✅ LLM code generators completed")
     else:
@@ -325,7 +325,7 @@ def qa_generator_node(state: PipelineState):
     print("🧪 19. QA Generator running...")
     prompt = load_prompt("19_qa_generator.md")
     messages = [SystemMessage(content=prompt), HumanMessage(content=f"Project at: {state['repo_path']}\nPlatform: {state['selected_platform']}\nGenerate tests now.")]
-    response = llm.invoke(messages)
+    response = cost_aware_invoke(messages)
     saved = parse_and_save_docs(response.content, state["repo_path"])
     return {
         "tests_generated": True,
@@ -359,6 +359,16 @@ def git_publish_node(state: PipelineState):
         "pr_url": publish_result.get("pr_url", ""),
         "progress_log": [f"📤 GitHub published: {publish_result.get('repo_url', 'N/A')}"]
     }
+
+
+# ====================== COST-AWARE LLM WRAPPER (Module 5) ======================
+from tools.cost_tracker import cost_tracker
+
+def cost_aware_invoke(prompt_messages):
+    """Every LLM call now tracked automatically."""
+    response = cost_aware_invoke(prompt_messages)
+    cost_tracker.track_call(response)
+    return response
 
 with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discipline Protocol v1.0 enforced"):
     workflow = StateGraph(PipelineState)

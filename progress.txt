@@ -29,3 +29,5 @@ Phase 5 — Discipline Protocol (making foundations bulletproof)
 2026-02-24 21:00 MST — step 5: Version Control - Final audit.log sync after Module 3 deployment.
 
 2026-02-24 21:05 MST — step 5: Production-Grade Packaging - Full pip-installable gemforge CLI (pyproject.toml, src/gemforge/cli.py, thin launcher, README instructions).
+
+2026-02-24 21:10 MST — step 5: Cost & Rate-Limit Awareness - Real-time LLM token/cost tracking + final report in CLI (CostTracker, cost_aware_invoke wrapper on 10 calls, state fields, CLI report).

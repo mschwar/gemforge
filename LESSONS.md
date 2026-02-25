@@ -72,3 +72,9 @@
 - Backward-compatible thin launcher (gemforge_cli.py).
 - pip install -e . now makes the CLI available system-wide.
 - Ready for Homebrew tap in v2.0.
+
+### 2026-02-24 Cost & Rate-Limit Awareness (Module 5)
+
+- Every LLM call now automatically tracked (Claude 3.5 Sonnet pricing).
+- Final report printed after every run: 💰 Total cost + tokens + calls.
+- Global singleton + state integration.

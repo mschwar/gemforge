@@ -77,3 +77,10 @@ Then use from anywhere:
     gemforge new "Your raw idea"
 
 One-command install coming soon via Homebrew tap.
+
+## Cost Tracking (Module 5)
+Every run now shows:
+
+    💰 Total cost: $X.XXXX | Tokens: XXXX | Calls: XX
+
+Real-time tracking + final report included.

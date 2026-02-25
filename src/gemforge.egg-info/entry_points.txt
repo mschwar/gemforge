@@ -1,0 +1,2 @@
+[console_scripts]
+gemforge = gemforge.cli:main

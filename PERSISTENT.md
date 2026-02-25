@@ -39,5 +39,8 @@ Phase 5 — Discipline Protocol (making foundations bulletproof)
 - Module 3: Version Control Module 3: Version Control & Collaboration (In Progress) Collaboration (Complete) — Auto GitHub repo + push + clean initial PR after successful build (gh CLI).
 
 
-- Module 5: Cost & Rate-Limit Awareness (In Progress) — Real-time LLM token/cost tracking + final report.
+- Module 5: Cost Module 5: Cost & Rate-Limit Awareness (In Progress) Rate-Limit Awareness (Complete) — Real-time LLM token/cost tracking + final report.
+
+
+- Module 6: Persistence & Multi-Gem Management (In Progress) — gems.db + gemforge list/status commands.
 
