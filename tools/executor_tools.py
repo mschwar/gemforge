@@ -40,6 +40,7 @@ def parse_and_save_generated_code(repo_path: str, llm_response: str):
     matches = re.findall(pattern, llm_response, re.DOTALL)
 
     written_count = 0
+    output_root = Path(repo_path).resolve()
     for filename, content in matches:
         destination = _resolve_generated_file_path(repo_path, filename)
         if not destination:
@@ -47,7 +48,8 @@ def parse_and_save_generated_code(repo_path: str, llm_response: str):
 
         ensure_dir(str(destination.parent))
         write_file(str(destination), content.strip())
-        print(f"   ✅ Generated {destination.relative_to(repo_path)}")
+        relative = destination.relative_to(output_root)
+        print(f"   ✅ Generated {relative}")
         written_count += 1
 
     return written_count
@@ -137,7 +139,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
                 "-quiet"
             ]
             result["command"] = " ".join(cmd)
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180, cwd=str(repo))
             output = proc.stdout + "\n" + proc.stderr
             result["details"] = output[-4000:]  # last 4k chars
             result["success"] = proc.returncode == 0
@@ -148,7 +150,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
             print("🧪 Running Jest for web project...")
             cmd = ["npm", "test", "--", "--watchAll=false", "--ci", "--coverage"]
             result["command"] = " ".join(cmd)
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(repo))
             output = proc.stdout + "\n" + proc.stderr
             result["details"] = output[-3000:]
             result["success"] = proc.returncode == 0
@@ -156,9 +158,10 @@ def run_tests(repo_path: str, platform: str) -> dict:
             result["failures"] = output.count("fail") or (0 if result["success"] else 1)
 
         else:
-            print(f"🧪 No dedicated test runner for {platform} yet → marking as skipped (success for pipeline)")
-            result["success"] = True
-            result["report"] = f"Tests skipped for {platform} (extend run_tests for full support)"
+            print(f"🧪 No dedicated test runner for {platform} yet → failing closed")
+            result["success"] = False
+            result["failures"] = 1
+            result["report"] = f"No dedicated test runner for {platform}"
 
         print(f"   → {result['report']}")
         return result
@@ -167,4 +170,3 @@ def run_tests(repo_path: str, platform: str) -> dict:
         return {"success": False, "report": "Test execution timed out (180s)", "passed": False, "failures": 999, "details": "Timeout"}
     except Exception as e:
         return {"success": False, "report": f"Test runner error: {str(e)}", "passed": False, "failures": 1, "details": str(e)}
-

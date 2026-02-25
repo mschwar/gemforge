@@ -567,12 +567,17 @@ def director_node(state: PipelineState):
         
     is_green = "GREEN LIGHT" in response.content.upper()
     rejection_count = state.get("director_rejection_count", 0)
+    tests_passed = bool(state.get("tests_passed", False))
+
+    # QA is a hard gate: no green light when tests did not pass.
+    if not tests_passed:
+        is_green = False
+        print("   ⚠️  QA gate failed — director approval blocked.")
 
     if not is_green:
         rejection_count += 1
         if rejection_count >= 3:
-            print(f"   ⚠️  Director rejected {rejection_count} times — forcing green light to prevent runaway loop.")
-            is_green = True
+            print(f"   ⚠️  Director rejected {rejection_count} times — manual intervention required.")
 
     return {
         "director_approved": is_green,
@@ -762,4 +767,3 @@ def get_pipeline_app():
     if _pipeline_app is None:
         _pipeline_app = _build_pipeline()
     return _pipeline_app
-
