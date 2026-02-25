@@ -99,3 +99,31 @@ Scope: Bound LLM context costs and enforce minimum generation integrity guarante
 
 ### Rollback Plan
 - Feature-flag strict generation thresholds for one release if false positives appear on edge prompts.
+
+## Phase 4: Operability and Failure Semantics
+Scope: Remove ambiguous fail-open behavior and make operator intervention points explicit.
+
+### Actions
+1. Classify subprocess actions into `critical` vs `non-critical` and enforce fail policy per class (GF-007).
+2. Convert critical failures (git bootstrap/publish, required build steps) from warn-and-continue to actionable failure states (GF-007).
+3. Add structured error envelope to pipeline state (`error_code`, `error_stage`, `operator_action`) for downstream reporting (GF-007).
+4. Update CLI final report to distinguish success, partial success, and blocked/manual intervention outcomes (GF-007).
+5. Add tests for publish failure and critical command failure routing (GF-007).
+
+### Gates
+- Gate P4-G1 (Critical Stop):
+  - Simulated critical git/publish failure prevents false success messaging.
+  - Evidence: integration-style unit test with mocked subprocess failure.
+- Gate P4-G2 (Operator Clarity):
+  - Final CLI output includes clear next action when blocked.
+  - Evidence: snapshot/assertion test on report content.
+- Gate P4-G3 (State Explainability):
+  - Failure metadata is persisted and visible for dashboard or future API surfaces.
+  - Evidence: state assertion at end of failed run.
+
+### Exit Criteria
+- No critical pipeline failure can be emitted as mission-complete.
+- All new error codes documented in an operator runbook section.
+
+### Rollback Plan
+- Keep legacy warn-only path behind temporary env flag during one stabilization cycle.
