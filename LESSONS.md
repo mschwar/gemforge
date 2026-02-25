@@ -55,3 +55,10 @@
 - Full Module 2 deployed cleanly (agent, tools, state fields, nodes, conditional gate).
 - Pipeline now auto-pauses on test failure — user must review before infra/deploy.
 - Ready for live testing on the 5 existing projects in ../gemforge-projects/.
+
+### 2026-02-24 Version Control & Collaboration (Module 3)
+
+- Full auto-publish: gh CLI creates repo, pushes initial commit, creates PR with MASTERBRIEF body.
+- Deploy success → git_publish_node → END (seamless after QA).
+- gh CLI only (user runs `gh auth login` once).
+- Every future gem now lives on GitHub with a ready PR for collaboration.

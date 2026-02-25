@@ -51,6 +51,11 @@ class PipelineState(TypedDict):
     tests_passed: bool
     test_report: str
 
+    # Version Control (Module 3)
+    git_published: bool
+    git_repo_url: str
+    pr_url: str
+
     # === DISCIPLINE PROTOCOL INTEGRATION ===
     discipline_enforced: bool
     last_audit_timestamp: str | None
@@ -88,6 +93,9 @@ def create_initial_pipeline_state(raw_idea: str) -> PipelineState:
             "tests_generated": False,
             "tests_passed": False,
             "test_report": "",
+            "git_published": False,
+            "git_repo_url": "",
+            "pr_url": "",
             # Discipline fields
             "discipline_enforced": True,
             "last_audit_timestamp": enforcer.timestamp(),

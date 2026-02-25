@@ -33,5 +33,8 @@ Phase 5 — Discipline Protocol (making foundations bulletproof)
 
 
 ## Active Modules (Phase 5)
-- Module 2: Real QA / Testing Layer (In Progress) — Automated test generation + execution + fail-safe human gate. Platform-aware (XCTest, Jest, pytest, etc.).
+- Module 2: Real QA / Testing Layer (Complete) — Automated test generation + execution + fail-safe human gate. Platform-aware (XCTest, Jest, pytest, etc.).
+
+
+- Module 3: Version Control Module 3: Version Control & Collaboration (In Progress) Collaboration (Complete) — Auto GitHub repo + push + clean initial PR after successful build (gh CLI).
 

@@ -18,6 +18,7 @@ from tools.project_tools import (
     parse_platform_manifest,
 )
 from tools.executor_tools import run_tests
+from tools.git_tools import push_to_github
 import os
 import re
 
@@ -344,6 +345,21 @@ def qa_node(state: PipelineState):
         "progress_log": [f"🧪 QA Result: {test_result['report']} ({test_result['failures']} failures)"]
     }
 
+
+# ====================== GIT PUBLISH NODE (Module 3) ======================
+def git_publish_node(state: PipelineState):
+    """20_git_publish.md — auto GitHub repo + push + PR"""
+    print("📤 21. Git Publish running...")
+    if not state.get("repo_path"):
+        return {"git_published": False, "progress_log": ["⚠️ Git publish skipped (no repo)"]}
+    publish_result = push_to_github(state["repo_path"], state["raw_idea"])
+    return {
+        "git_published": publish_result["success"],
+        "git_repo_url": publish_result.get("repo_url", ""),
+        "pr_url": publish_result.get("pr_url", ""),
+        "progress_log": [f"📤 GitHub published: {publish_result.get('repo_url', 'N/A')}"]
+    }
+
 with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discipline Protocol v1.0 enforced"):
     workflow = StateGraph(PipelineState)
     
@@ -365,6 +381,7 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
         ("cicd", cicd_node),
         ("sre", sre_node),
         ("deploy", deploy_node),
+    ("git_publish", git_publish_node),
     ]
     for name, func in nodes:
         workflow.add_node(name, func)
@@ -401,7 +418,8 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     workflow.add_edge("infra", "cicd")
     workflow.add_edge("cicd", "sre")
     workflow.add_edge("sre", "deploy")
-    workflow.add_edge("deploy", END)
+    workflow.add_edge("deploy", "git_publish")
+    workflow.add_edge("git_publish", END)
     
     conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
     memory = SqliteSaver(conn)
