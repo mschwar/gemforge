@@ -149,6 +149,16 @@ Scope: Remove ambiguous fail-open behavior and make operator intervention points
 ### Rollback Plan
 - Keep legacy warn-only path behind temporary env flag during one stabilization cycle.
 
+### Status
+- Executed on 2026-02-25:
+  - Critical subprocess commands now raise typed failures with structured payloads.
+  - Git publish failures now produce blocked-state envelopes and stop the pipeline before shipping.
+  - Deploy failures for non-native targets now surface partial-state envelopes with explicit operator action.
+  - Final CLI report now differentiates complete vs partial vs blocked outcomes.
+- Gate evidence:
+  - `python -m pytest -q tests/test_phase4_failure_semantics.py` → `4 passed`
+  - `python -m pytest -q` → `20 passed`
+
 ## Phase 5: Test Fidelity, DX, and AI-Native Maintainability
 Scope: Close coverage and ergonomics gaps so human and AI contributors can safely evolve the system.
 

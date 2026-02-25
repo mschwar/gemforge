@@ -15,7 +15,7 @@ from langgraph.types import interrupt
 
 from core.llm import cost_aware_invoke, load_prompt
 from state import PipelineState
-from tools.deploy_tools import deploy_to_vercel
+from tools.deploy_tools import deploy_to_vercel, is_native_mobile
 from tools.executor_tools import run_tests
 from tools.file_tools import create_project_structure, write_file
 from tools.git_tools import push_to_github
@@ -59,9 +59,122 @@ def parse_and_save_docs(response_text: str, repo_path: str) -> dict:
     return saved
 
 from tools.ingestor_tools import bundle_context
+from core.runtime.event_bus import event_bus
+from core.runtime.schema import StepEvent
+import functools
+
+from langgraph.errors import GraphInterrupt
+from tools.cost_tracker import cost_tracker
+import time
+
+def logged_node(node_func):
+    """Decorator to publish step lifecycle events with metrics to the EventBus.
+    
+    If GEMFORGE_WORKER_ENABLED is true and the step is enabled, this decorator
+    acts as a proxy: it publishes a 'step.requested' event and interrupts
+    the orchestrator.
+    """
+    @functools.wraps(node_func)
+    def wrapper(state: PipelineState, *args, **kwargs):
+        run_id = state.get("run_id", "unknown-run")
+        step_id = node_func.__name__.replace("_node", "")
+        
+        # 1. Routing Logic (Strangler/Worker Proxy)
+        is_worker = os.getenv("GEMFORGE_IS_WORKER", "false").lower() == "true"
+        worker_enabled = os.getenv("GEMFORGE_WORKER_ENABLED", "false").lower() == "true"
+        enabled_steps = os.getenv("GEMFORGE_WORKER_ENABLED_STEPS", "").split(",")
+        
+        should_proxy = (
+            worker_enabled and 
+            not is_worker and 
+            (step_id in enabled_steps or "all" in enabled_steps)
+        )
+        
+        if should_proxy:
+            print(f"   📡 [PROXY] Routing {step_id} to worker...")
+            event_bus.publish(StepEvent(
+                run_id=run_id,
+                step_id=step_id,
+                event_type="step.requested",
+                payload={"state_slice": dict(state)}
+            ))
+            # Suspend graph execution
+            # The dispatcher will resume this node with Command(resume={"state_patch": ..., "metrics": ...})
+            decision = interrupt({"action": "wait_for_worker", "step_id": step_id})
+            
+            # Apply patch and update orchestrator cost tracking
+            patch = decision.get("state_patch", {})
+            metrics = decision.get("metrics", {})
+            
+            if metrics:
+                # Sync the worker's consumption back to the orchestrator counters
+                cost_tracker.total_tokens += metrics.get("tokens_used", 0)
+                cost_tracker.total_cost += metrics.get("cost_usd", 0.0)
+                
+                # Also update the state dict itself
+                patch["total_tokens"] = state.get("total_tokens", 0) + metrics.get("tokens_used", 0)
+                patch["total_cost"] = state.get("total_cost", 0.0) + metrics.get("cost_usd", 0.0)
+
+            return patch
+
+        # 2. Execution Logic (Standard Sync or inside Worker)
+        start_time = time.time()
+        start_tokens = cost_tracker.total_tokens
+        start_cost = cost_tracker.total_cost
+
+        # Publish: step.started
+        event_bus.publish(StepEvent(
+            run_id=run_id,
+            step_id=step_id,
+            event_type="step.started"
+        ))
+        
+        try:
+            result = node_func(state, *args, **kwargs)
+            
+            duration = time.time() - start_time
+            tokens_used = cost_tracker.total_tokens - start_tokens
+            cost_incurred = cost_tracker.total_cost - start_cost
+
+            # Publish: step.completed
+            event_bus.publish(StepEvent(
+                run_id=run_id,
+                step_id=step_id,
+                event_type="step.completed",
+                payload={
+                    "result_keys": list(result.keys()) if isinstance(result, dict) else [],
+                    "metrics": {
+                        "duration_sec": round(duration, 3),
+                        "tokens_used": tokens_used,
+                        "cost_usd": round(cost_incurred, 6)
+                    }
+                }
+            ))
+            return result
+        except GraphInterrupt as e:
+            # Re-raise without logging as failure (it's a pause, not an error)
+            raise e
+        except Exception as e:
+            duration = time.time() - start_time
+            # Publish: step.failed
+            event_bus.publish(StepEvent(
+                run_id=run_id,
+                step_id=step_id,
+                event_type="step.failed",
+                payload={
+                    "error": str(e),
+                    "metrics": {
+                        "duration_sec": round(duration, 3)
+                    }
+                }
+            ))
+            raise e
+    return wrapper
+
 
 # ====================== NODES ======================
 
+@logged_node
 def document_auditor_node(state: PipelineState):
     path = state.get("source_docs_path")
     if not path or not os.path.exists(path):
@@ -113,6 +226,7 @@ def document_auditor_node(state: PipelineState):
         ],
     }
 
+@logged_node
 def vision_polisher_node(state: PipelineState):
     print("🔨 1. Vision Polisher running...")
     prompt = load_prompt("01_vision_polisher.md")
@@ -144,6 +258,7 @@ def vision_polisher_node(state: PipelineState):
         "progress_log": ["✅ Vision Polisher completed"],
     }
 
+@logged_node
 def human_review_node(state: PipelineState):
     print("\n" + "─" * 80)
     print("  POLISHED VISION")
@@ -162,6 +277,7 @@ def human_review_node(state: PipelineState):
         updates["human_feedback"] = decision["feedback"]
     return updates
 
+@logged_node
 def ruthless_interrogator_node(state: PipelineState):
     print("🔨 2. Ruthless Interrogator generating canonical docs...")
     prompt = load_prompt("02_ruthless_interrogator.md")
@@ -175,6 +291,7 @@ def ruthless_interrogator_node(state: PipelineState):
         "progress_log": ["✅ Canonical docs generated"],
     }
 
+@logged_node
 def bootstrapper_node(state: PipelineState):
     print("🔨 3. Bootstrapper creating REAL project...")
     gem_name = state.get("raw_idea", "NewGem")[:50]
@@ -204,6 +321,7 @@ def bootstrapper_node(state: PipelineState):
         "progress_log": [f"✅ Repo + docs at {repo_path}"],
     }
 
+@logged_node
 def uiux_node(state: PipelineState):
     print("🔨 4. UI/UX Design Agent running...")
     prompt = load_prompt("04_uiux_design.md")
@@ -220,6 +338,7 @@ def uiux_node(state: PipelineState):
         print("   → UIUX_SPEC.md saved")
     return {"progress_log": ["✅ UI/UX spec complete"]}
 
+@logged_node
 def architecture_node(state: PipelineState):
     print("🔨 5. Architecture Agent running...")
     prompt = load_prompt("05_architecture.md")
@@ -236,6 +355,7 @@ def architecture_node(state: PipelineState):
         print("   → ARCHITECTURE.md saved")
     return {"architecture_complete": True, "progress_log": ["✅ Architecture complete"]}
 
+@logged_node
 def business_strategist_node(state: PipelineState):
     print("🔨 5c. Business Strategist Agent running...")
     prompt = load_prompt("23_business_strategist.md")
@@ -260,6 +380,7 @@ def business_strategist_node(state: PipelineState):
         
     return {"business_strategy_complete": True, "progress_log": ["✅ Business strategy complete"]}
 
+@logged_node
 def landing_page_node(state: PipelineState):
     print("🔨 5d. Landing Page Agent running...")
     prompt = load_prompt("24_landing_page_generator.md")
@@ -289,6 +410,7 @@ def landing_page_node(state: PipelineState):
         
     return {"landing_page_complete": True, "progress_log": ["✅ Landing page complete"]}
 
+@logged_node
 def platform_decision_node(state: PipelineState):
     print("🔨 5b. Platform Decision Agent running...")
     prompt = load_prompt("05b_platform_decision.md")
@@ -321,6 +443,7 @@ def platform_decision_node(state: PipelineState):
         ],
     }
 
+@logged_node
 def code_orchestrator_node(state: PipelineState):
     print("🔨 6. Code Generation Orchestrator — launching real generators...")
     repo_path = state.get("repo_path", "")
@@ -460,6 +583,7 @@ def _build_parallel_context(state: PipelineState) -> str:
         f"PLATFORM: {state.get('selected_platform', 'web')}"
     )
 
+@logged_node
 def frontend_node(state: PipelineState):
     print("🔨 7. Frontend Agent (parallel)...")
     prompt = load_prompt("06_frontend.md")
@@ -470,6 +594,7 @@ def frontend_node(state: PipelineState):
         write_file(f"{repo_path}/FRONTEND_SPEC.md", response.content)
     return {"frontend_complete": True, "progress_log": ["✅ Frontend spec complete"]}
 
+@logged_node
 def backend_node(state: PipelineState):
     print("🔨 8. Backend Agent (parallel)...")
     prompt = load_prompt("07_backend.md")
@@ -480,6 +605,7 @@ def backend_node(state: PipelineState):
         write_file(f"{repo_path}/BACKEND_SPEC.md", response.content)
     return {"backend_complete": True, "progress_log": ["✅ Backend spec complete"]}
 
+@logged_node
 def data_node(state: PipelineState):
     print("🔨 9. Data Architecture Agent (parallel)...")
     prompt = load_prompt("08_data.md")
@@ -502,6 +628,7 @@ def _ops_context(state: PipelineState) -> str:
         f"DIRECTOR_REVIEW:\n{_read_spec_file(repo_path, 'DIRECTOR_REVIEW.md')}"
     )
 
+@logged_node
 def infra_node(state: PipelineState):
     print("🔨 10. Infrastructure Agent...")
     prompt = load_prompt("10_infra.md")
@@ -514,6 +641,7 @@ def infra_node(state: PipelineState):
         print("   → Infrastructure spec saved")
     return {"infra_complete": True, "progress_log": ["✅ Infra spec complete"]}
 
+@logged_node
 def cicd_node(state: PipelineState):
     print("🔨 11. CI/CD Agent...")
     prompt = load_prompt("11_cicd.md")
@@ -526,6 +654,7 @@ def cicd_node(state: PipelineState):
         print("   → CI/CD spec saved")
     return {"cicd_complete": True, "progress_log": ["✅ CI/CD spec complete"]}
 
+@logged_node
 def sre_node(state: PipelineState):
     print("🔨 12. SRE & Observability Agent...")
     prompt = load_prompt("12_sre.md")
@@ -538,6 +667,7 @@ def sre_node(state: PipelineState):
         print("   → SRE spec saved")
     return {"sre_complete": True, "progress_log": ["✅ SRE spec complete"]}
 
+@logged_node
 def deploy_node(state: PipelineState):
     print("🔨 13. Final Deploy Agent...")
     repo_path = state.get("repo_path", "new-gem")
@@ -553,15 +683,29 @@ def deploy_node(state: PipelineState):
             "live_url": live_url,
             "deploy_complete": True,
             "deploy_status": "live",
+            "pipeline_status": state.get("pipeline_status", "success"),
             "progress_log": [f"🎉 LIVE at {live_url}"],
         }
     else:
         print(f"\n📦 Project ready locally at: {repo_path}")
+        if is_native_mobile(selected_platform):
+            return {
+                "live_url": None,
+                "deploy_complete": True,
+                "deploy_status": "local",
+                "pipeline_status": state.get("pipeline_status", "success"),
+                "progress_log": [f"📦 Native project ready locally: {repo_path}"],
+            }
+
         return {
             "live_url": None,
             "deploy_complete": True,
-            "deploy_status": "local",
-            "progress_log": [f"📦 Project ready locally: {repo_path}"],
+            "deploy_status": "failed",
+            "pipeline_status": "partial",
+            "error_code": "DEPLOY_FAILED",
+            "error_stage": "deploy",
+            "operator_action": "Run `npx vercel --prod --yes` from the generated project directory.",
+            "progress_log": [f"⚠️ Deploy failed; project remains local at: {repo_path}"],
         }
 
 # ====================== ROUTING ======================
@@ -571,9 +715,14 @@ def route_after_review(state: PipelineState) -> str:
         return "ruthless_interrogator"
     return "vision_polisher"
 
+
+def route_after_git_publish(state: PipelineState) -> str:
+    return "shipping" if state.get("git_published", False) else "end"
+
 # ====================== GRAPH ======================
 
 # ====================== QA / TESTING NODES (Module 2 — Real QA Layer) ======================
+@logged_node
 def qa_generator_node(state: PipelineState):
     """19_qa_generator.md — generates platform-appropriate tests"""
     print("🧪 19. QA Generator running...")
@@ -587,6 +736,7 @@ def qa_generator_node(state: PipelineState):
         "progress_log": [f"🧪 Generated tests for {state['selected_platform']}"]
     }
 
+@logged_node
 def qa_node(state: PipelineState):
     """Executes the tests via run_tests and decides pass/fail"""
     print("🧪 20. QA Executor running...")
@@ -600,6 +750,7 @@ def qa_node(state: PipelineState):
     }
 
 
+@logged_node
 def director_node(state: PipelineState):
     print("🎬 20b. Director Review running...")
     prompt = load_prompt("13_director.md")
@@ -649,20 +800,46 @@ def director_node(state: PipelineState):
 
 
 # ====================== GIT PUBLISH NODE (Module 3) ======================
+@logged_node
 def git_publish_node(state: PipelineState):
     """20_git_publish.md — auto GitHub repo + push + PR"""
     print("📤 21. Git Publish running...")
     if not state.get("repo_path"):
-        return {"git_published": False, "progress_log": ["⚠️ Git publish skipped (no repo)"]}
+        return {
+            "git_published": False,
+            "pipeline_status": "blocked",
+            "error_code": "REPO_PATH_MISSING",
+            "error_stage": "git_publish",
+            "operator_action": "Ensure bootstrapper produced a repo_path before publishing.",
+            "progress_log": ["❌ Git publish blocked (no repo_path available)"],
+        }
     publish_result = push_to_github(state["repo_path"], state["raw_idea"])
+
+    if not publish_result["success"]:
+        return {
+            "git_published": False,
+            "git_repo_url": publish_result.get("repo_url", ""),
+            "pr_url": publish_result.get("pr_url", ""),
+            "pipeline_status": "blocked",
+            "error_code": publish_result.get("error_code", "GIT_PUBLISH_FAILED"),
+            "error_stage": publish_result.get("error_stage", "git_publish"),
+            "operator_action": publish_result.get(
+                "operator_action",
+                "Authenticate GitHub CLI and rerun publish.",
+            ),
+            "progress_log": [f"❌ Git publish blocked: {publish_result.get('error', 'unknown error')}"],
+        }
+
     return {
-        "git_published": publish_result["success"],
+        "git_published": True,
         "git_repo_url": publish_result.get("repo_url", ""),
         "pr_url": publish_result.get("pr_url", ""),
+        "pipeline_status": state.get("pipeline_status", "success"),
         "progress_log": [f"📤 GitHub published: {publish_result.get('repo_url', 'N/A')}"]
     }
 
 
+@logged_node
 def shipping_node(state: PipelineState):
     """26_shipping_manifest_agent.md — auto-generates launch metadata and checklists"""
     print("🚀 23. Shipping Manifest (v2.0) running...")
@@ -691,6 +868,7 @@ def shipping_node(state: PipelineState):
 
 
 # ====================== WEAVER REFLECTION NODE (v2.0 Pillar 1+8) ======================
+@logged_node
 def weaver_node(state: PipelineState):
     """21_weaver_reflector.md — extracts lessons & updates user taste"""
     print("🕸️  22. Weaver Reflector (v2.0) running...")
@@ -803,7 +981,11 @@ def _build_pipeline():
     workflow.add_edge("cicd", "sre")
     workflow.add_edge("sre", "deploy")
     workflow.add_edge("deploy", "git_publish")
-    workflow.add_edge("git_publish", "shipping")
+    workflow.add_conditional_edges(
+        "git_publish",
+        route_after_git_publish,
+        {"shipping": "shipping", "end": END},
+    )
     workflow.add_edge("shipping", "weaver")
     workflow.add_edge("weaver", END)
 

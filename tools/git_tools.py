@@ -16,10 +16,26 @@ def push_to_github(repo_path: str, idea: str) -> dict:
     """Full Module 3 flow: create repo, push, create PR."""
     repo = Path(repo_path)
     if not repo.exists():
-        return {"success": False, "error": "Repo path missing"}
+        return {
+            "success": False,
+            "repo_url": "",
+            "pr_url": "",
+            "error": "Repo path missing",
+            "error_code": "REPO_PATH_MISSING",
+            "error_stage": "git_publish",
+            "operator_action": "Ensure repo_path exists before publish.",
+        }
 
     repo_name = sanitize_repo_name(idea)
-    result = {"success": False, "repo_url": "", "pr_url": "", "error": ""}
+    result = {
+        "success": False,
+        "repo_url": "",
+        "pr_url": "",
+        "error": "",
+        "error_code": "",
+        "error_stage": "",
+        "operator_action": "",
+    }
 
     try:
         # 1. Create repo on GitHub (--push pushes the initial commit automatically)
@@ -52,5 +68,10 @@ def push_to_github(repo_path: str, idea: str) -> dict:
 
     except Exception as e:
         result["error"] = str(e)
+        result["error_code"] = "GIT_PUBLISH_FAILED"
+        result["error_stage"] = "git_publish"
+        result["operator_action"] = (
+            "Authenticate GitHub CLI (`gh auth login`), verify git credentials, then rerun publish."
+        )
         print(f"⚠️ Git publish failed: {e}")
         return result

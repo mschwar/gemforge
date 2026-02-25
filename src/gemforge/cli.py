@@ -22,7 +22,7 @@ import os  # noqa: E402
 
 from pipeline import get_pipeline_app  # noqa: E402
 from state import create_initial_pipeline_state  # noqa: E402
-
+from core.runtime.event_logger import event_logger # noqa: E402
 
 # ---------------------------------------------------------------------------
 # SIGINT handler — persists cost to DB before exit so no session data is lost
@@ -99,17 +99,35 @@ def _finalize_and_report(result: dict):
 def _print_final_report(result: dict):
     repo_path = result.get("repo_path", "")
     live_url = result.get("live_url")
+    pipeline_status = result.get("pipeline_status", "success")
+    error_code = result.get("error_code")
+    error_stage = result.get("error_stage")
+    operator_action = result.get("operator_action")
+
+    if pipeline_status == "blocked":
+        banner = "  ⛔  GEMFORGE MISSION BLOCKED"
+    elif pipeline_status == "partial":
+        banner = "  ⚠️  GEMFORGE MISSION PARTIAL"
+    else:
+        banner = "  🎉  GEMFORGE MISSION COMPLETE"
+
     print("\n" + "═" * 80)
-    print("  🎉  GEMFORGE MISSION COMPLETE")
+    print(banner)
     print("═" * 80)
     print(f"  Project:  {repo_path or 'N/A'}")
     print(f"  Live URL: {live_url or 'Native project — open in Xcode/Android Studio'}")
+    if error_code:
+        print(f"  Error:    {error_code} ({error_stage or 'unknown stage'})")
+    if operator_action:
+        print(f"  Action:   {operator_action}")
     print()
     print("  What to do next:")
     if repo_path:
         print(f"     cd {repo_path}")
     if live_url:
         print(f"     open {live_url}")
+    elif operator_action:
+        print(f"     {operator_action}")
     elif repo_path:
         xcodeprojs = [f for f in os.listdir(repo_path) if f.endswith(".xcodeproj")] if os.path.isdir(repo_path) else []
         if xcodeprojs:
@@ -121,7 +139,12 @@ def _print_final_report(result: dict):
     for line in result.get("progress_log", []):
         print(f"    {line}")
     print()
-    print("  ✅ Your app is ready. Go ship it.")
+    if pipeline_status == "blocked":
+        print("  ❌ Manual intervention required before release.")
+    elif pipeline_status == "partial":
+        print("  ⚠️ Release is partially complete; address the action item(s) above.")
+    else:
+        print("  ✅ Your app is ready. Go ship it.")
     print("═" * 80)
 
 
@@ -234,6 +257,49 @@ def cmd_list(args):
     print(f"\n{'═' * 60}\n")
 
 
+def cmd_runs_list(args):
+    runs = event_logger.get_recent_runs(limit=args.limit)
+    if not runs:
+        print("No run events found.")
+        return
+
+    print(f"\n{'═' * 60}")
+    print(f"  🏃  Recent GemForge Runs")
+    print(f"{'═' * 60}")
+    for run_id in runs:
+        print(f"  - {run_id}")
+    print(f"{'═' * 60}\n")
+
+
+def cmd_runs_tail(args):
+    import time
+    run_id = args.run_id
+    seen_event_ids = set()
+
+    print(f"\n{'═' * 60}")
+    print(f"  🎬  Tailing run: {run_id}")
+    print(f"  (Ctrl+C to stop)")
+    print(f"{'═' * 60}")
+
+    try:
+        while True:
+            events = event_logger.get_run_events(run_id)
+            for e in events:
+                if e["event_id"] not in seen_event_ids:
+                    ts = datetime.datetime.fromisoformat(e["created_at"]).strftime("%H:%M:%S")
+                    status_icon = "🟢" if "completed" in e["event_type"] else "🟡" if "started" in e["event_type"] else "🔴"
+                    print(f"  [{ts}] {status_icon} {e['step_id']:<20} | {e['event_type']}")
+                    seen_event_ids.add(e["event_id"])
+            
+            if not args.follow:
+                break
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print(f"\n{'═' * 60}")
+        print("  Stopped tailing.")
+        print(f"{'═' * 60}\n")
+
+
 # ---------------------------------------------------------------------------
 # Argparse entry point
 # ---------------------------------------------------------------------------
@@ -281,6 +347,17 @@ def main():
         help="Max projects to show (default: 20)",
     )
 
+    # gemforge runs
+    runs_parser = subparsers.add_parser("runs", help="Manage and inspect runs")
+    runs_sub = runs_parser.add_subparsers(dest="runs_action", metavar="<action>")
+
+    runs_list_parser = runs_sub.add_parser("list", help="List recent runs")
+    runs_list_parser.add_argument("--limit", type=int, default=10, help="Max runs to show")
+
+    runs_tail_parser = runs_sub.add_parser("tail", help="Tail events for a specific run")
+    runs_tail_parser.add_argument("run_id", help="The run ID to tail")
+    runs_tail_parser.add_argument("-f", "--follow", action="store_true", help="Follow the event stream")
+
     args = parser.parse_args()
 
     if args.command == "new":
@@ -292,6 +369,14 @@ def main():
         cmd_resume(args)
     elif args.command == "list":
         cmd_list(args)
+    elif args.command == "runs":
+        if args.runs_action == "list":
+            cmd_runs_list(args)
+        elif args.runs_action == "tail":
+            cmd_runs_tail(args)
+        else:
+            runs_parser.print_help()
+            sys.exit(1)
     else:
         parser.print_help()
         sys.exit(1)

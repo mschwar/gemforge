@@ -6,6 +6,9 @@ from core.discipline.enforcer import DisciplineEnforcer, discipline_step
 class PipelineState(TypedDict):
     """This is the single source of truth that travels through every agent."""
 
+    # Run context
+    run_id: str
+
     # Input from user
     raw_idea: str
     source_docs_path: str | None
@@ -54,6 +57,10 @@ class PipelineState(TypedDict):
     live_url: str | None
     deploy_status: str | None
     shipping_complete: bool
+    pipeline_status: str  # "in_progress", "success", "partial", "blocked"
+    error_code: str | None
+    error_stage: str | None
+    operator_action: str | None
 
     # QA / Testing Layer (Module 2)
     tests_generated: bool
@@ -76,9 +83,13 @@ class PipelineState(TypedDict):
 
 def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = None) -> PipelineState:
     """Disciplined factory — always used instead of manual dicts."""
-    with discipline_step(5, "StateInit", f"Create disciplined initial state for idea: {raw_idea[:60]}..."):
+    # Create run_id from raw_idea for traceability
+    run_id = f"gem-{raw_idea[:60].replace(' ', '-').replace('/', '')}"
+    
+    with discipline_step(5, "StateInit", f"Create disciplined initial state for run: {run_id}"):
         enforcer = DisciplineEnforcer()
         state: PipelineState = {
+            "run_id": run_id,
             "raw_idea": raw_idea,
             "source_docs_path": source_docs_path,
             "audited_context": None,
@@ -110,6 +121,10 @@ def create_initial_pipeline_state(raw_idea: str, source_docs_path: str | None = 
             "live_url": None,
             "deploy_status": None,
             "shipping_complete": False,
+            "pipeline_status": "in_progress",
+            "error_code": None,
+            "error_stage": None,
+            "operator_action": None,
             "tests_generated": False,
             "tests_passed": False,
             "test_report": "",

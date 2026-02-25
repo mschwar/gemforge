@@ -8,6 +8,16 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).parent.parent.resolve()
 PROJECTS_ROOT = Path(os.getenv("PROJECTS_ROOT", str(_REPO_ROOT.parent / "gemforge-projects")))
 
+
+class CommandFailure(RuntimeError):
+    """Raised when a critical subprocess command fails."""
+
+    def __init__(self, payload: dict):
+        self.payload = payload
+        message = payload.get("message", "Critical command failed")
+        super().__init__(message)
+
+
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
     return path
@@ -18,17 +28,50 @@ def write_file(path: str, content: str):
         f.write(content)
     return path
 
-def run_command(cmd: list, cwd: str = None):
+def run_command(
+    cmd: list,
+    cwd: str = None,
+    *,
+    critical: bool = False,
+    error_code: str = "",
+    error_stage: str = "",
+    operator_action: str = "",
+):
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"⚠️ Command failed: {' '.join(cmd)}")
         print(result.stderr)
+        if critical:
+            payload = {
+                "message": f"Critical command failed: {' '.join(cmd)}",
+                "error_code": error_code or "CRITICAL_COMMAND_FAILED",
+                "error_stage": error_stage or "command",
+                "operator_action": operator_action or "Inspect stderr and fix environment prerequisites.",
+                "command": " ".join(cmd),
+                "returncode": result.returncode,
+                "stderr": (result.stderr or "").strip(),
+            }
+            raise CommandFailure(payload)
     return result
 
 def init_git_repo(repo_path: str):
     ensure_dir(repo_path)
-    run_command(["git", "init"], cwd=repo_path)
-    run_command(["git", "branch", "-M", "main"], cwd=repo_path)
+    run_command(
+        ["git", "init"],
+        cwd=repo_path,
+        critical=True,
+        error_code="GIT_INIT_FAILED",
+        error_stage="bootstrapper",
+        operator_action="Install git and verify repository permissions.",
+    )
+    run_command(
+        ["git", "branch", "-M", "main"],
+        cwd=repo_path,
+        critical=True,
+        error_code="GIT_BRANCH_SETUP_FAILED",
+        error_stage="bootstrapper",
+        operator_action="Verify git repo state and retry branch setup.",
+    )
     return repo_path
 
 
@@ -60,8 +103,22 @@ def create_project_structure(gem_name: str):
 
     # Git
     init_git_repo(full_path)
-    run_command(["git", "add", "."], cwd=full_path)
-    run_command(["git", "commit", "-m", "chore: initial scaffold by GemForge Bootstrapper"], cwd=full_path)
+    run_command(
+        ["git", "add", "."],
+        cwd=full_path,
+        critical=True,
+        error_code="GIT_STAGE_FAILED",
+        error_stage="bootstrapper",
+        operator_action="Resolve git index/permissions issues, then rerun.",
+    )
+    run_command(
+        ["git", "commit", "-m", "chore: initial scaffold by GemForge Bootstrapper"],
+        cwd=full_path,
+        critical=True,
+        error_code="GIT_BOOTSTRAP_COMMIT_FAILED",
+        error_stage="bootstrapper",
+        operator_action="Configure git user.name/user.email and rerun.",
+    )
 
     print(f"✅ Real project created at: {full_path}")
     return full_path
