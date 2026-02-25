@@ -122,7 +122,6 @@ def repair_node(state: Dict[str, Any]) -> Dict[str, Any]:
         # Re-fetch RAG with more context
         extra_rag = ""
         try:
-            from core.memory.retriever import semantic_retriever
             hits = semantic_retriever.search(signature, k=increased_k)
             if hits:
                 extra_rag = "\n\n### ADDITIONAL ANALOGOUS EXAMPLES (DEEPER SEARCH):\n"

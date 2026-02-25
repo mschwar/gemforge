@@ -72,6 +72,11 @@ def _calculate_input_hash(state: PipelineState, step_id: str) -> str:
         if repo_path and os.path.exists(repo_path):
             inputs["dir_hash"] = calculate_dir_hash(Path(repo_path))
 
+    # qa and repair must vary per attempt so cache hits don't cause an infinite loop
+    if step_id in ["qa", "repair"]:
+        inputs["repair_count"] = state.get("repair_count", 0)
+        inputs["test_details"] = state.get("test_details", "")
+
     # Serialize and hash
     serialized = json.dumps(inputs, sort_keys=True)
     return calculate_string_hash(serialized)

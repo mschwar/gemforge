@@ -146,7 +146,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
 
     try:
         # NOTE: os.chdir is intentionally avoided here; use cwd= on subprocess calls instead.
-        if "ios" in platform.lower() or "swift" in platform.lower():
+        if "ios" in platform.lower() or "swift" in platform.lower() or "react-native" in platform.lower():
             print("🧪 Running XCTest for iOS...")
             
             # Check for xcode-select developer tools vs full Xcode
