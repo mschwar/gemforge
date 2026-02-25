@@ -43,6 +43,9 @@ Scope: Lock release-critical correctness for deploy and approval gates.
 ### Status
 - Completed in commit `c270065132154a0125dac225be9aa153d77feca9`.
 - Residual: monitor real-world deploy logs for edge frameworks beyond current detectors.
+- Re-executed and gate-verified on 2026-02-25:
+  - `python -m pytest -q tests/test_reliability_guards.py` → `5 passed`
+  - `python -m pytest -q` → `10 passed`
 
 ## Phase 2: Identity and State Safety
 Scope: Remove run-collision risk and make cost/state accounting consistent across approval loops.
