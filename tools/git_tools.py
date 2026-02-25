@@ -21,14 +21,22 @@ def push_to_github(repo_path: str, idea: str) -> dict:
     result = {"success": False, "repo_url": "", "pr_url": "", "error": ""}
 
     try:
-        # 1. Create repo on GitHub
+        # 1. Create repo on GitHub (--push pushes the initial commit automatically)
         subprocess.run(["gh", "repo", "create", repo_name, "--private", "--source=.", "--remote=origin", "--push"], cwd=repo, check=True, capture_output=True)
-        repo_url = f"https://github.com/$(gh api user | jq -r .login)/{repo_name}"
+
+        # Resolve the real repo URL from gh CLI (avoids the shell-expansion anti-pattern)
+        user_result = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+        login = user_result.stdout.strip() if user_result.returncode == 0 else "unknown"
+        repo_url = f"https://github.com/{login}/{repo_name}"
         result["repo_url"] = repo_url
 
-        # 2. Initial commit + push (already handled by gh)
+        # 2. Stage any uncommitted files and push (gh repo create already pushed once; this
+        #    covers files written after bootstrapping but before git_publish_node)
         subprocess.run(["git", "add", "."], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "-m", f"Initial commit by GemForge — {idea}"], cwd=repo, check=True)
+        # Only commit if there are staged changes to avoid empty-commit error
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True)
+        if status.stdout.strip():
+            subprocess.run(["git", "commit", "-m", f"Initial commit by GemForge — {idea[:72]}"], cwd=repo, check=True)
         subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo, check=True)
 
         # 3. Create PR

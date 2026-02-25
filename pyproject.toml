@@ -13,7 +13,8 @@ dependencies = [
     "langchain-anthropic",
     "python-dotenv",
     "pydantic",
-    "jinja2"
+    "jinja2",
+    "streamlit"
 ]
 
 [project.scripts]

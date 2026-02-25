@@ -3,11 +3,15 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+# Resolve paths relative to this file so they work regardless of CWD
+_FACTORY_ROOT = Path(__file__).resolve().parent.parent.parent
+
 class LessonsManager:
-    def __init__(self, db_path: str = "lessons/lessons.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str = None):
+        resolved = Path(db_path).resolve() if db_path else _FACTORY_ROOT / "lessons" / "lessons.db"
+        self.db_path = resolved
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.db_path))
+        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._init_db()
 
     def _init_db(self):
@@ -40,7 +44,7 @@ class LessonsManager:
         self._append_to_lessons_md(gem_id, ts, category, lesson, impact)
 
     def _append_to_lessons_md(self, gem_id, ts, category, lesson, impact):
-        md_path = Path("LESSONS.md")
+        md_path = _FACTORY_ROOT / "LESSONS.md"
         if not md_path.exists():
             md_path.write_text("# GemForge LESSONS.md\n\n")
         with open(md_path, "a") as f:

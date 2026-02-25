@@ -6,3 +6,4 @@ langchain-core
 anthropic
 python-dotenv
 langgraph-checkpoint-sqlite
+streamlit

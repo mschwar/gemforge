@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 from datetime import datetime
 
+_FACTORY_ROOT = Path(__file__).resolve().parent.parent.parent
+
 class UserTasteManager:
-    def __init__(self, path: str = "memory/user_taste.json"):
-        self.path = Path(path)
+    def __init__(self, path: str = None):
+        resolved = Path(path).resolve() if path else _FACTORY_ROOT / "memory" / "user_taste.json"
+        self.path = resolved
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():
             self._init_default()

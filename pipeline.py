@@ -22,6 +22,7 @@ from tools.git_tools import push_to_github
 from core.evolution.prompt_loader import prompt_loader
 import os
 import re
+from pathlib import Path
 
 llm = ChatAnthropic(model="claude-3-haiku-20240307", temperature=0)
 
@@ -606,7 +607,7 @@ with discipline_step(5, "PipelineBuild", "Full LangGraph compilation with Discip
     
     workflow.add_conditional_edges(
         "director",
-        lambda s: "infra" if s.get("director_approved", True) else "human_review",
+        lambda s: "infra" if s.get("director_approved", False) else "human_review",
         {"human_review": "human_review", "infra": "infra"}
     )
     

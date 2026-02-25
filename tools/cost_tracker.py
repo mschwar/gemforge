@@ -16,7 +16,8 @@ class CostTracker:
         if hasattr(response, "usage"):
             input_t = response.usage.input_tokens
             output_t = response.usage.output_tokens
-            cost = (input_t * 0.000015 + output_t * 0.000075)  # Claude 3.5 Sonnet pricing
+            # Claude 3 Haiku pricing: $0.25/M input, $1.25/M output
+            cost = (input_t * 0.00000025 + output_t * 0.00000125)
         else:
             input_t = output_t = cost = 0
 

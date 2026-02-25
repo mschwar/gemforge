@@ -9,14 +9,23 @@ def _resolve_generated_file_path(repo_path: str, filename: str) -> Path | None:
     if not cleaned:
         return None
 
-    output_path = Path(repo_path)
+    output_path = Path(repo_path).resolve()
+
     if "/" in cleaned:
-        return output_path / cleaned
+        candidate = (output_path / cleaned).resolve()
+    elif cleaned.endswith(".swift"):
+        candidate = (output_path / "Sources" / cleaned).resolve()
+    else:
+        candidate = (output_path / cleaned).resolve()
 
-    if cleaned.endswith(".swift"):
-        return output_path / "Sources" / cleaned
+    # Guard: reject paths that escape the project directory (path traversal)
+    try:
+        candidate.relative_to(output_path)
+    except ValueError:
+        print(f"   ⚠️ SECURITY: Rejected path traversal attempt: {filename!r} → {candidate}")
+        return None
 
-    return output_path / cleaned
+    return candidate
 
 
 def parse_and_save_generated_code(repo_path: str, llm_response: str):
@@ -106,8 +115,7 @@ def run_tests(repo_path: str, platform: str) -> dict:
     }
 
     try:
-        os.chdir(repo)
-
+        # NOTE: os.chdir is intentionally avoided here; use cwd= on subprocess calls instead.
         if "ios" in platform.lower() or "swift" in platform.lower():
             print("🧪 Running XCTest for iOS...")
             
