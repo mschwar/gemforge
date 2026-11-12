@@ -1,6 +1,6 @@
 venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .env
 .DS_Store
 .thread_id
@@ -14,4 +14,3 @@ projects/
 
 # Packaging artifacts
 *.egg-info/
-__pycache__/

@@ -1,17 +1,17 @@
-# Blueprint 03: Deterministic Build Graph + Incremental Cache
+# Blueprint 03: Deterministic Build Graph and Incremental Cache
 
 ## 1. Executive Summary
-GemForge reruns most of the pipeline when refining a vision or recovering from a mid-run failure. This creates avoidable cost and latency because many steps are pure functions of stable inputs (prompts, selected template, canonical docs, prior artifacts). This blueprint introduces deterministic step fingerprints and content-addressed caching so unchanged work is reused automatically.
+This blueprint takes a step identifier, prompt version, normalized `PipelineState` slice, and input file hashes, computes a deterministic SHA-256 fingerprint before step execution, and either restores cached state patches and artifacts or executes the step and stores the new result in SQLite.
 
-The architectural shift is from "execute nodes in fixed sequence" to "evaluate a deterministic build graph where each node has explicit inputs and reproducible outputs." Cache hits short-circuit redundant LLM calls and artifact regeneration while preserving correctness through strict invalidation and versioned step contracts.
+Without step caching, refining a product concept or recovering from a mid-run error re-executes unchanged upstream stages. Many pipeline nodes are deterministic functions of stable inputs: prompt templates, platform manifests, specification documents, and upstream file hashes.
 
-This pairs naturally with the event-driven runtime: workers consult cache before execution, publish cache-hit events, and only perform real work on misses.
+Evaluating nodes as a dependency graph with Content-Addressed Storage (CAS) skips redundant model calls on cache hits while invalidating downstream dependents whenever inputs or prompt versions change. Workers in the event-driven runtime check the cache index first, emit cache-hit telemetry, and invoke models only on cache misses.
 
 ## 2. Outcomes
-1. 30-60% reduction in repeated-run latency for refinements and retries.
-2. 25-50% reduction in LLM spend for near-identical runs.
-3. Reproducible artifacts tied to explicit input hashes.
-4. Clear dependency lineage for debugging and audits.
+1. 30-60% lower repeated-run latency during iterative refinements and retries.
+2. 25-50% lower model token spend across runs that share unchanged upstream inputs.
+3. Reproducible step outputs tied to explicit SHA-256 input fingerprints.
+4. Inspectable node dependency lineage (`gemforge build status <run_id>`) for debugging and taint invalidation.
 
 ## 3. Target Architecture
 ```mermaid
@@ -30,12 +30,12 @@ flowchart TD
 ```
 
 ## 4. Determinism Model
-Each step fingerprint is derived from:
+Each step fingerprint combines five deterministic inputs:
 1. `step_id`
-2. `step_version` (bump on logic/prompt change)
-3. Normalized input state slice
-4. Input artifact hashes
-5. Relevant environment contract (model name, template version)
+2. `step_version` (incremented when node code or prompt logic changes)
+3. Normalized input `PipelineState` slice
+4. Sorted SHA-256 hashes of input artifacts
+5. Runtime contract (model identifier and template manifest version)
 
 Fingerprint formula:
 ```text
@@ -90,55 +90,56 @@ class StepSpec:
     executor: Callable[[dict], dict]
 ```
 
-### 6.2 First High-ROI Cache Candidates
+### 6.2 High-Return Cache Candidates
+Priority stages with high return on investment (ROI) for caching:
 1. `vision_polisher`
 2. `ruthless_interrogator`
 3. `architecture`
 4. `platform_decision`
 5. `qa_generator`
 
-These are expensive and frequently re-run with identical inputs.
+These stages perform multi-thousand-token model calls and frequently receive identical upstream inputs during downstream retries.
 
 ## 7. Invalidation Rules
-1. Step logic changed -> bump `StepSpec.version`.
-2. Prompt changed -> include prompt hash in runtime contract.
-3. Template metadata changed -> include template manifest hash.
-4. Model changed -> include model identifier.
-5. User feedback changed -> affects selected input slices and invalidates dependent nodes.
+1. Node implementation changes -> bump `StepSpec.version`.
+2. Prompt file changes -> include prompt SHA-256 digest in the runtime contract.
+3. Template manifest changes -> include `GemForgeTemplate.json` hash.
+4. Model identifier changes -> include model name in the runtime contract.
+5. Operator feedback or manual `gemforge build taint` -> marks the target node and its downstream dependents stale in `memory/taint_registry.db`.
 
 ## 8. Implementation Plan (Incremental)
 ### Phase 0: Fingerprint and Metrics Only
-1. Compute and log fingerprints for key nodes without caching.
-2. Record potential hit rates to prioritize rollout.
+1. Compute and log step fingerprints without serving cached outputs.
+2. Measure candidate hit rates across refinement runs.
 
 ### Phase 1: Read-Through Cache
-1. Add cache lookup before selected node execution.
-2. On hit, apply cached `state_patch` and artifacts.
-3. On miss, execute node and write cache entry.
+1. Query [`core/build/cache.py`](../../core/build/cache.py) before executing cacheable nodes.
+2. Restore cached `state_patch` dictionaries and files on cache hits.
+3. Execute the node and store the resulting entry on cache misses.
 
 ### Phase 2: Dependency-Aware Incremental Rebuild
-1. Build explicit dependency map for all nodes.
-2. Recompute only descendants of changed nodes.
-3. Support partial resume from arbitrary step with cache reuse.
+1. Declare explicit upstream dependencies for every pipeline node in [`core/build/graph.py`](../../core/build/graph.py).
+2. Recompute only tainted nodes and their downstream dependents via [`core/build/taint_manager.py`](../../core/build/taint_manager.py).
+3. Support partial resume from mid-pipeline stages while reusing valid upstream outputs.
 
 ### Phase 3: Content-Addressed Artifact Store
-1. Store artifacts as CAS objects with deduplication.
-2. Bundle manifests reference object hashes.
-3. Enable artifact diffing between runs for auditability.
+1. Store generated files in CAS tables keyed by SHA-256 content digest.
+2. Reference object digests from bundle manifests to deduplicate unchanged files.
+3. Diff bundle manifests across runs during audits.
 
-## 9. File-Level Changes
-1. New: `core/buildgraph/spec.py`
-2. New: `core/buildgraph/fingerprint.py`
-3. New: `core/buildgraph/cache_store.py`
-4. New: `core/buildgraph/executor.py`
-5. Update: `pipeline.py` (wrap node execution with buildgraph executor)
-6. Update: `core/llm.py` (expose stable runtime contract details)
-7. New: `tests/test_step_fingerprint.py`
-8. New: `tests/test_incremental_rebuild.py`
+## 9. File-Level Modules
+1. [`core/build/graph.py`](../../core/build/graph.py)
+2. [`core/build/hasher.py`](../../core/build/hasher.py)
+3. [`core/build/cache.py`](../../core/build/cache.py)
+4. [`core/build/taint_manager.py`](../../core/build/taint_manager.py)
+5. [`pipeline.py`](../../pipeline.py)
+6. [`src/gemforge/cli.py`](../../src/gemforge/cli.py)
+7. [`tests/test_blueprint_03_build.py`](../../tests/test_blueprint_03_build.py)
+8. [`tests/test_dependency_integrity.py`](../../tests/test_dependency_integrity.py)
 
 ## 10. Reference Boilerplate
 ```python
-# core/buildgraph/fingerprint.py
+# core/build/hasher.py
 import hashlib
 import json
 
@@ -165,7 +166,7 @@ def step_fingerprint(
 ```
 
 ```python
-# core/buildgraph/executor.py
+# core/build/cache.py
 def execute_with_cache(step_spec, state, cache_store, runtime_contract):
     input_slice = step_spec.input_selector(state)
     artifact_hashes = step_spec.artifact_selector(state)
@@ -185,11 +186,10 @@ def execute_with_cache(step_spec, state, cache_store, runtime_contract):
     return {"from_cache": False, **result}
 ```
 
-## 11. Dependency Additions
-No external dependency is required for phase 1 (SQLite + stdlib only). Optional phase 3 optimization:
+## 11. Dependencies
+Phase 1 and Phase 2 require Python standard library `sqlite3` and `hashlib` only. Optional serialization speedup:
 ```toml
 dependencies = [
-  # existing...
   "orjson>=3.10.0"
 ]
 ```
@@ -197,25 +197,25 @@ dependencies = [
 ## 12. Feature Flags
 1. `GEMFORGE_BUILDGRAPH_CACHE_ENABLED=true|false`
 2. `GEMFORGE_CACHE_STEPS=vision_polisher,ruthless_interrogator,architecture`
-3. `GEMFORGE_CACHE_READONLY=true|false` (safe dry run mode)
+3. `GEMFORGE_CACHE_READONLY=true|false`
 
 ## 13. Testing and Validation
-1. Unit: canonical hashing is stable across dict key order.
-2. Unit: version bump invalidates cache.
-3. Integration: repeated identical run yields cache hits for targeted steps.
-4. Integration: changed feedback invalidates only dependent steps.
-5. Safety: cache corruption fallback to live execution.
+1. Unit: canonical JSON hashing stays invariant across dictionary key ordering.
+2. Unit: bumping `step_version` invalidates prior cache entries.
+3. Integration: repeated identical inputs produce cache hits on targeted steps.
+4. Integration: tainting an upstream node invalidates all downstream dependents in `DEPENDENCY_MAP`.
+5. Safety: corrupted cache payloads fall back cleanly to live node execution.
 
 ## 14. Risk Register
-1. False cache hits from incomplete input selection.
-   Mitigation: strict input selectors + shadow-mode verification.
-2. Cache bloat.
-   Mitigation: TTL plus LRU pruning on `cache_entries`.
-3. Hidden nondeterminism from wall-clock or random content.
-   Mitigation: disallow nondeterministic fields in fingerprint input; enforce seeded generation where needed.
+1. Stale cache hits caused by omitted input fields.
+   Mitigation: explicit per-node input selectors verified in shadow mode.
+2. Unbounded SQLite cache growth.
+   Mitigation: time to live (TTL) expiration plus least recently used (LRU) pruning on `cache_entries`.
+3. Nondeterministic timestamps or random identifiers leaking into fingerprints.
+   Mitigation: exclude wall-clock fields from fingerprint selectors.
 
 ## 15. Success Criteria
-1. >=40% cache hit rate on iterative refinement workflows.
-2. >=30% median runtime reduction for `resume refine` cycles.
-3. >=25% LLM cost reduction without output regressions.
-4. Deterministic replay of cached steps with identical artifacts.
+1. At least 40% cache hit rate during iterative `gemforge resume refine` workflows.
+2. At least 30% lower median runtime on refinement cycles.
+3. At least 25% lower token cost without test regressions.
+4. Identical restored artifacts on deterministic replay of cached steps.

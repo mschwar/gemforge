@@ -1,17 +1,17 @@
-# Blueprint 02: Semantic Memory + Agentic Repair Loop
+# Blueprint 02: Semantic Memory and Agentic Repair Loop
 
 ## 1. Executive Summary
-GemForge stores lessons and user taste, but it does not currently retrieve past technical outcomes to improve new generations or auto-repair failing runs. This blueprint introduces a semantic memory plane plus a controlled agentic repair loop that can diagnose failures, propose patches, verify via tests, and merge successful fixes.
+This blueprint takes generated source files, test failure logs, and prior repair records as inputs, extracts normalized failure signatures to retrieve relevant fixes and test candidate patches inside a bounded loop, and outputs verified code fixes plus indexed semantic memory entries.
 
-The strategic value is compounding quality. Every failure and fix becomes reusable knowledge for subsequent runs, reducing repeated defects and manual intervention. Combined with current `qa_node` and `director_node`, this turns the pipeline from "generate then fail fast" into "generate, adapt, and harden."
+Storing static text lessons alone does not retrieve past compile or test fixes during active code generation. Combining vector retrieval with a bounded repair loop lets `qa_node` and `director_node` diagnose recurring build failures, verify candidate patches against the project test suite, and reuse proven repairs on future runs.
 
-Implementation remains incremental: first add retrieval-augmented context for generation, then add one bounded repair attempt, then evolve to multi-attempt self-healing with strict safety budgets.
+Rollout proceeds in three stages: retrieve prior artifacts during code generation, run a single bounded repair attempt on test failure, and expand to multi-attempt repair under strict file-count and token caps.
 
 ## 2. Outcomes
-1. Higher first-pass test success through retrieval-grounded generation.
-2. Autonomous correction for common compile/test failures.
-3. Durable memory of failure signatures, patches, and verification outcomes.
-4. Continuous quality lift without changing core prompt inventory every run.
+1. Higher first-pass test pass rates through retrieval-grounded code generation.
+2. Automated repair for common compile, import, and test failures.
+3. Durable records of failure signatures, patches, and test verification results.
+4. Reusable fix context without rewriting base agent prompt files after every run.
 
 ## 3. Target Architecture
 ```mermaid
@@ -37,10 +37,10 @@ flowchart TD
 ## 4. Memory Model
 ### 4.1 Document Types to Index
 1. Generated source files (`.py`, `.ts`, `.tsx`, `.swift`, `.kt`, `.dart`).
-2. Specs and architecture docs.
-3. QA/test outputs and failure traces.
-4. Director feedback and human refinement prompts.
-5. Accepted repair patches and post-repair reports.
+2. Product specifications and architecture documents.
+3. Test runner outputs and stack traces.
+4. Director review notes and operator refinement feedback.
+5. Verified repair patches and post-repair summaries.
 
 ### 4.2 SQL Schema (Metadata and Repair Ledger)
 ```sql
@@ -81,11 +81,11 @@ CREATE TABLE IF NOT EXISTS repair_attempts (
 
 ## 5. Core Loop Design
 ### 5.1 Failure Signature
-Normalize errors into stable signatures:
-1. Runtime/tool context (`xcodebuild`, `npm test`, `pytest`).
-2. Primary error type (compile, import, type mismatch, missing file).
-3. Top stack lines and failing file paths.
-4. Platform and template metadata.
+Normalize raw test errors into deterministic signature strings:
+1. Runner context (`xcodebuild`, `npm test`, `pytest`).
+2. Primary error class (compile error, missing import, type mismatch, missing file).
+3. Top stack-trace lines and failing file paths.
+4. Selected platform and template identifier.
 
 Example:
 ```text
@@ -93,47 +93,47 @@ platform=nextjs|runner=jest|error=module-not-found|missing=app/components/Foo.ts
 ```
 
 ### 5.2 Repair Loop Policy
-1. Max attempts per run: `3`.
-2. Max changed files per attempt: `8`.
-3. Max token budget per attempt: configurable.
-4. Allowed write scope: only under project root; no secret/env file edits.
-5. Mandatory verification: tests must pass before acceptance.
+1. Maximum attempts per run: `3`.
+2. Maximum modified files per attempt: `8`.
+3. Maximum token budget per attempt: configurable via environment settings.
+4. Write scope: confined to the generated project directory, never touching `.env` or secret files.
+5. Verification gate: the project test suite must pass before any patch is accepted.
 
 ### 5.3 Decision Tree
-1. If retrieval confidence is high and known fix exists, apply deterministic patch template.
-2. Else invoke planner LLM with retrieved context and failure signature.
-3. If attempt fails twice with low novelty, escalate to human review with summary.
+1. Apply a deterministic fix when retrieval matches a verified repair template with high confidence.
+2. Otherwise invoke the repair planner model with retrieved context and the normalized failure signature.
+3. Escalate to the human review gate with a diagnostic summary if two attempts fail without new progress.
 
 ## 6. Implementation Plan (Incremental)
 ### Phase 0: Retrieval for Generation Context
-1. Add semantic indexer for newly generated artifacts after `code_orchestrator`.
-2. Retrieve relevant prior artifacts for `frontend`, `backend`, `data` prompts.
-3. Track impact on first-pass QA results.
+1. Index newly generated files after `code_orchestrator` completes.
+2. Retrieve matching prior examples for `frontend`, `backend`, and `data` generation prompts.
+3. Measure changes in first-pass test pass rates.
 
 ### Phase 1: Single-Attempt Auto-Repair
-1. On `qa_node` failure, invoke `repair_node` once.
-2. Generate patch, apply changes, rerun tests.
-3. Save attempt metadata in `repair_attempts`.
+1. Route `qa_node` failures into `repair_node` for one bounded repair attempt.
+2. Generate a candidate patch, apply edits inside the project directory, and rerun tests.
+3. Record attempt metadata in `repair_attempts`.
 
 ### Phase 2: Multi-Attempt Controlled Loop
-1. Add bounded retry loop with strategy switching.
-2. Add novelty threshold to avoid repeated near-identical patches.
-3. Emit rich artifacts: `REPAIR_REPORT.md`, `PATCH_EXPLAIN.md`.
+1. Add bounded retries up to `max_attempts` with distinct repair strategies.
+2. Enforce patch-diversity checks ([`core/repair/agentic_loop.py`](../../core/repair/agentic_loop.py)) to reject duplicate patches.
+3. Write repair summaries (`REPAIR_REPORT.md` and `PATCH_EXPLAIN.md`) for operator inspection.
 
 ### Phase 3: Cross-Run Learning
-1. Promote successful repair patterns to prompt snippets.
-2. Auto-tag frequent failure families and preemptively adjust generation.
-3. Feed summarized outcomes into Weaver and taste memory.
+1. Index accepted repair patches as reusable `repair` documents.
+2. Group recurring failure signatures to tighten upstream generation prompts.
+3. Feed verified repair summaries into [`core/evolution/weaver.py`](../../core/evolution/weaver.py) and `memory/user_taste.json`.
 
-## 7. File-Level Changes
-1. New: `core/memory/semantic_index.py`
-2. New: `core/memory/retriever.py`
-3. New: `core/repair/signature.py`
-4. New: `core/repair/agentic_loop.py`
-5. Update: `pipeline.py` (insert `repair_node` after QA failure path)
-6. Update: `core/evolution/weaver.py` (ingest repair outcomes)
-7. New: `tests/test_failure_signature.py`
-8. New: `tests/test_agentic_repair_loop.py`
+## 7. File-Level Modules
+1. [`core/memory/semantic_index.py`](../../core/memory/semantic_index.py)
+2. [`core/memory/retriever.py`](../../core/memory/retriever.py)
+3. [`core/repair/signature.py`](../../core/repair/signature.py)
+4. [`core/repair/agentic_loop.py`](../../core/repair/agentic_loop.py)
+5. [`pipeline.py`](../../pipeline.py)
+6. [`core/evolution/weaver.py`](../../core/evolution/weaver.py)
+7. [`tests/test_blueprint_02_memory.py`](../../tests/test_blueprint_02_memory.py)
+8. [`tests/test_repair_diversity.py`](../../tests/test_repair_diversity.py)
 
 ## 8. Reference Boilerplate
 ```python
@@ -170,11 +170,10 @@ def run_agentic_repair(context: dict, max_attempts: int = 3) -> dict:
     return {"status": "escalate", "attempts": max_attempts}
 ```
 
-## 9. Dependency Additions
+## 9. Optional Dependencies
 ```toml
 # pyproject.toml
 dependencies = [
-  # existing...
   "chromadb>=0.5.0",
   "sentence-transformers>=3.0.0",
   "numpy>=2.0.0"
@@ -188,22 +187,22 @@ dependencies = [
 4. `GEMFORGE_AUTO_REPAIR_WRITE_CAP=8`
 
 ## 11. Testing and Validation
-1. Unit: signature extraction from representative test logs.
-2. Unit: retriever precision for known failure categories.
-3. Integration: induced Next.js failure repaired in <=2 attempts.
-4. Safety: verify blocked writes outside project root.
-5. Regression: ensure no repair runs when QA already passed.
+1. Unit: signature extraction from representative compiler and test logs.
+2. Unit: retriever ranking accuracy across failure categories.
+3. Integration: induced Next.js test failure repaired within two attempts.
+4. Safety: write attempts outside `PROJECTS_ROOT` are rejected.
+5. Regression: repair loop stays skipped whenever `qa_node` passes on the first run.
 
 ## 12. Risk Register
-1. Hallucinated patches that degrade code quality.
-   Mitigation: strict test gate plus max file-change cap.
-2. Retrieval drift from noisy documents.
-   Mitigation: indexed doc-type filters and recency weighting.
-3. Cost blowout from repeated repair loops.
-   Mitigation: per-attempt token budget and hard max attempts.
+1. Low-quality candidate patches that weaken application logic.
+   Mitigation: mandatory test execution gate plus per-attempt file-change cap.
+2. Noisy retrieval matches from unrelated projects.
+   Mitigation: filter queries by platform, runner, and document type.
+3. Unbounded token spend during repeated failures.
+   Mitigation: per-attempt token ceiling and hard attempt limit.
 
 ## 13. Success Criteria
-1. >=25% reduction in manual intervention after QA failures.
-2. >=20% increase in first-pass or auto-repaired pass rates.
-3. >=70% of successful repairs reusable via future retrieval hits.
-4. No unauthorized file modifications in safety tests.
+1. At least 25% fewer manual escalations after automated test failures.
+2. At least 20% higher combined first-pass and auto-repaired build completion.
+3. At least 70% of accepted repairs retrievable by matching failure signatures.
+4. Zero writes outside the target project directory in safety tests.

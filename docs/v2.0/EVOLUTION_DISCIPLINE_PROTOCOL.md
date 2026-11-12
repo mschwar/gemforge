@@ -1,35 +1,40 @@
-# GemForge v2.0 – Evolution Discipline Protocol
+# GemForge v2.0 — Evolution Discipline Protocol
+
 **Version**: 1.0  
 **Date**: 2026-02-24  
-**Purpose**: Guarantee that self-evolution is safe, aligned, traceable, and never breaks the rock-solid foundations.
 
-## The Three Laws of Evolution
-1. **Endure** – Never degrade performance. Every prompt change must pass validation on past gems.
-2. **Excel** – Improvements must be measurable (quality, alignment, speed, user delight).
-3. **Evolve** – Every gem triggers lesson capture. Prompt history lives forever in git.
+Prompt evolution takes completed run logs, test results, and operator feedback as inputs, validates candidate prompt diffs against prior runs and human review gates, and outputs versioned prompt files under `agents/prompts/` plus recorded lessons in `lessons/lessons.db`.
+
+## Three Rules of Prompt Evolution
+
+1. **Preserve Passing Behavior** — Candidate prompt revisions must pass regression checks against prior project runs before activation.
+2. **Measure Changes** — Prompt revisions must state expected improvements in test pass rate, output structure, or token cost.
+3. **Record Provenance** — Every completed run captures structured lessons, and every prompt revision stays versioned in Git.
 
 ## Core Components
-- **User Taste Memory** – Your values, style, tech preferences, “never do X” rules.
-- **Lessons Database** – SQLite (`lessons/lessons.db`) + human-readable summaries in LESSONS.md.
-- **Versioned Prompts** – `agents/prompts/{agent}/v{version}.md` + `metadata.json`.
-- **Weaver Reflection Subgraph** – Dedicated LangGraph that runs post-gem.
 
-## Workflow (automated + human gate)
-1. Gem finishes → Weaver Reflection Subgraph runs.
-2. Lessons extracted → stored in DB + appended to LESSONS.md → git commit.
-3. When enough high-impact lessons exist (or manual `forge evolve`) → Evolver proposes new prompt versions.
-4. Proposal generated as `evolutions/proposal_YYYYMMDD.md` with full diff + rationale.
-5. **Human approval required**: `forge approve-evolution --id XXX` (reviews diff, runs shadow test if chosen).
-6. Approved → prompts updated, git commit with full explanation, LESSONS.md updated, push.
-7. Factory now uses improved agents for next gem.
+- **User Taste Memory** — Operator style, stack preferences, and explicit constraints stored in `memory/user_taste.json`.
+- **Lessons Database** — SQLite store (`lessons/lessons.db`) paired with human-readable summaries in `LESSONS.md`.
+- **Versioned Prompts** — Immutable prompt files at `agents/prompts/{agent}/v{version}.md` tracked alongside `metadata.json`.
+- **Weaver Reflection Stage** — Post-run stage ([`core/evolution/weaver.py`](../../core/evolution/weaver.py)) that extracts lessons after shipping completes.
 
-## Symbiosis Rules (Pillar 8)
-- Every evolution prompt always includes top-k excerpts from your taste memory.
-- After any interaction you can say “Log feedback: …” → instantly added to memory.
-- Overrides from you have highest weight.
+## Workflow (Automated Capture and Human Gate)
 
-## Git & Documentation
-- Every change follows existing Discipline Protocol.
-- This file itself evolves via the same process.
+1. A pipeline run finishes and invokes the Weaver stage.
+2. Extracted lessons write to `lessons/lessons.db` and `LESSONS.md`.
+3. Accumulated lessons or an explicit evolution run draft candidate prompt revisions.
+4. The candidate revision writes a proposal file (`evolutions/proposal_YYYYMMDD.md`) containing the prompt diff and rationale.
+5. **Human approval gate**: an operator inspects the diff and shadow-test output before promoting a new prompt version.
+6. Approved revisions increment the prompt version file, record the rationale in Git history, and update `LESSONS.md`.
+7. Subsequent runs load the promoted prompt version through [`core/evolution/prompt_loader.py`](../../core/evolution/prompt_loader.py).
 
-This protocol is the operating system of the Dark Factory. It will be versioned and improved with every cycle.
+## Operator Preference Rules
+
+- Candidate prompt revisions include top-ranked entries from `memory/user_taste.json`.
+- Direct operator feedback recorded after a run updates `memory/user_taste.json`.
+- Explicit operator overrides take precedence over inferred preferences.
+
+## Governance
+
+- Changes to prompt templates and evolution scripts must satisfy [`AGENTS.md`](../../AGENTS.md) verification checks.
+- Revisions to this protocol follow the same review and Git history requirements.

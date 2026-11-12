@@ -1,21 +1,20 @@
-# GemForge Pipeline Stage Map (Phase 5)
+# GemForge Pipeline Stage Map
 
-This document is the fast path for humans and AI coding assistants to understand
-which module owns each orchestration concern and how state transitions gate the run.
+This guide maps how a `PipelineState` dictionary enters the orchestrator from `gemforge new` or `gemforge resume`, passes four state-transition gates, and outputs project files plus a terminal status envelope (`in_progress`, `success`, `partial`, or `blocked`). See [`README.md`](../../README.md) for CLI commands and [`AGENTS.md`](../../AGENTS.md) for state invariants.
 
 ## Ownership Map
 
-- `pipeline.py`
+- [`pipeline.py`](../../pipeline.py)
   - LangGraph graph assembly (`_build_pipeline`)
   - Node registration order and edge wiring
   - Node execution wrappers (`@logged_node`)
-- `core/pipeline_stages/failure_semantics.py`
+- [`core/pipeline_stages/failure_semantics.py`](../../core/pipeline_stages/failure_semantics.py)
   - Deploy outcome envelope (`live|local|failed`)
   - Git publish outcome envelope (`success|blocked`)
   - Routing decisions after review and publish
-- `core/pipeline_stages/context_builders.py`
-  - Shared context block construction for parallel and ops stages
-  - Spec file reads with stable fallbacks for missing docs
+- [`core/pipeline_stages/context_builders.py`](../../core/pipeline_stages/context_builders.py)
+  - Shared context block construction for parallel and operations stages
+  - Specification file reads with deterministic fallbacks for missing files
 
 ## Critical State Gates
 
@@ -28,20 +27,20 @@ which module owns each orchestration concern and how state transitions gate the 
 
 ## Pipeline Status Model
 
-- `in_progress`: run has started but not finalized.
-- `success`: fully completed and publish/deploy succeeded or native-local deploy accepted.
-- `partial`: deploy failed for non-native targets, but run produced usable local artifacts.
-- `blocked`: critical publish prerequisite failed and operator action is required.
+- `in_progress`: run has started and remains active or paused at a gate.
+- `success`: run completed and publish/deploy succeeded or native-local build output passed.
+- `partial`: web deployment failed, while local project files and tests completed.
+- `blocked`: a publish prerequisite failed and operator action is required.
 
 ## Operator-Facing Error Envelope
 
-These fields must travel in final state on blocked/partial outcomes:
+These fields travel in the final `PipelineState` dictionary on `blocked` or `partial` outcomes:
 
 - `error_code`
 - `error_stage`
 - `operator_action`
 
-CLI reporting consumes these keys directly in `_print_final_report` and must remain compatible.
+CLI reporting in [`src/gemforge/cli.py`](../../src/gemforge/cli.py) reads these keys directly in `_print_final_report`.
 
 ## State Transition Sketch
 
